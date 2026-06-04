@@ -65,12 +65,28 @@ export function ConfigScreen() {
 
           if (projectRoot) {
             branchName = `arena/${slug(c.name)}-${runId}-${i}`;
-            const result = await invoke<{ path: string; branch: string }>(IPC.CreateArenaWorktree, {
-              projectRoot,
-              branchName,
-              symlinkDirs: ['node_modules'],
-            });
+            const result = await invoke<{ path: string; branch: string; mergeSupported?: boolean }>(
+              IPC.CreateArenaWorktree,
+              {
+                projectRoot,
+                branchName,
+                symlinkDirs: ['node_modules'],
+              },
+            );
             worktreePath = result.path;
+            return {
+              id: c.id,
+              name: c.name,
+              command: c.command,
+              agentId: crypto.randomUUID(),
+              status: 'running' as const,
+              startTime: Date.now(),
+              endTime: null,
+              exitCode: null,
+              worktreePath,
+              branchName,
+              mergeSupported: result.mergeSupported ?? true,
+            };
           }
 
           return {
@@ -84,6 +100,7 @@ export function ConfigScreen() {
             exitCode: null,
             worktreePath,
             branchName,
+            mergeSupported: true,
           };
         }),
       );

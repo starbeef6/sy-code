@@ -20,6 +20,8 @@ export interface BattleCompetitor {
   worktreePath: string | null;
   /** Branch name used for the worktree */
   branchName: string | null;
+  /** Whether this arena sandbox can be merged back into the source project */
+  mergeSupported?: boolean;
   /** Whether this competitor's branch was merged into main */
   merged?: boolean;
   /** Captured terminal output (plain text) for review after battle */
@@ -42,6 +44,7 @@ export interface ArenaMatch {
     rating: number | null;
     worktreePath: string | null;
     branchName: string | null;
+    mergeSupported?: boolean;
     merged: boolean;
     terminalOutput: string | null;
   }>;

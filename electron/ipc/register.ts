@@ -52,6 +52,7 @@ import {
   pushTask,
   rebaseTask,
   createWorktree,
+  createArenaWorktree,
   removeWorktree,
   isGitRepo,
   getBranches,
@@ -773,12 +774,10 @@ export function registerAllHandlers(win: BrowserWindow): void {
   ipcMain.handle(IPC.CreateArenaWorktree, (_e, args) => {
     validatePath(args.projectRoot, 'projectRoot');
     validateBranchName(args.branchName, 'branchName');
-    return createWorktree(
+    return createArenaWorktree(
       args.projectRoot,
       args.branchName,
       args.symlinkDirs ?? [],
-      undefined,
-      true,
     );
   });
 

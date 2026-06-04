@@ -176,6 +176,7 @@ export function loadBattleFromHistory(match: ArenaMatch): void {
     exitCode: c.exitCode,
     worktreePath: c.worktreePath,
     branchName: c.branchName,
+    mergeSupported: c.mergeSupported,
     merged: c.merged,
     terminalOutput: c.terminalOutput ?? undefined,
   }));

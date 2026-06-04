@@ -32,6 +32,7 @@ function rankLabel(index: number): string {
 
 export function ResultsScreen() {
   const isHistoryView = () => arenaStore.selectedHistoryMatch !== null;
+  const usesRepoCopies = createMemo(() => arenaStore.battle.some((c) => c.mergeSupported === false));
   const projectLabel = createMemo(() => {
     const cwd = arenaStore.cwd;
     if (!cwd) return null;
@@ -158,6 +159,7 @@ export function ResultsScreen() {
         rating: ratings()[b.id] ?? null,
         worktreePath: b.worktreePath ?? null,
         branchName: b.branchName ?? null,
+        mergeSupported: b.mergeSupported,
         merged: b.merged ?? false,
         terminalOutput: b.terminalOutput ?? null,
       })),
@@ -269,7 +271,13 @@ export function ResultsScreen() {
                 </div>
 
                 {/* Merge into the project's detected main branch */}
-                <Show when={competitor.branchName && merge.hasChanges(competitor.id)}>
+                <Show
+                  when={
+                    competitor.branchName &&
+                    competitor.mergeSupported !== false &&
+                    merge.hasChanges(competitor.id)
+                  }
+                >
                   <div class="arena-result-column-merge">
                     <Show
                       when={merge.mergedId() !== competitor.id}
@@ -305,6 +313,12 @@ export function ResultsScreen() {
           }}
         </For>
       </div>
+
+      <Show when={usesRepoCopies()}>
+        <div class="arena-merge-error" style={{ 'margin-top': '10px' }}>
+          当前项目还没有初始提交。本次 Arena 使用独立仓库副本运行，因此可以比较结果，但不能直接合并回原项目。
+        </div>
+      </Show>
 
       <Show when={merge.mergeError()}>
         <div class="arena-merge-error">{merge.mergeError()}</div>

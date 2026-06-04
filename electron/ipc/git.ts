@@ -154,6 +154,10 @@ const CLAUDE_REQUIRED_FILES = ['settings.json', 'settings.local.json'];
 const SANDBOX_EXCLUDE_PATTERNS = [
   '/.bash_profile',
   '/.bashrc',
+  '/.claude/plans/',
+  '/.claude/settings.json',
+  '/.claude/settings.local.json',
+  '/.claude/steps.json',
   '/.gitconfig',
   '/.gitmodules',
   '/.mcp.json',
@@ -688,6 +692,69 @@ async function computeBranchDiffStats(
   return { linesAdded, linesRemoved };
 }
 
+async function repoHasCommits(repoRoot: string): Promise<boolean> {
+  return exec('git', ['rev-list', '-n1', '--all'], { cwd: repoRoot })
+    .then(({ stdout }) => !!stdout.trim())
+    .catch(() => false);
+}
+
+async function ensureLocalGitIdentity(repoRoot: string): Promise<void> {
+  const userName = await exec('git', ['config', 'user.name'], { cwd: repoRoot })
+    .then(({ stdout }) => stdout.trim())
+    .catch(() => '');
+  if (!userName) {
+    await exec('git', ['config', 'user.name', 'SY CODE Arena'], { cwd: repoRoot });
+  }
+
+  const userEmail = await exec('git', ['config', 'user.email'], { cwd: repoRoot })
+    .then(({ stdout }) => stdout.trim())
+    .catch(() => '');
+  if (!userEmail) {
+    await exec('git', ['config', 'user.email', 'sy-code-arena@local.invalid'], { cwd: repoRoot });
+  }
+}
+
+function createSelectedSymlinks(
+  repoRoot: string,
+  worktreePath: string,
+  symlinkDirs: string[],
+): string[] {
+  const createdSymlinks: string[] = [];
+  for (const name of symlinkDirs) {
+    if (name === '.claude') continue;
+    if (name.includes('/') || name.includes('\\') || name.includes('..') || name === '.') continue;
+    const source = path.join(repoRoot, name);
+    const target = path.join(worktreePath, name);
+    try {
+      if (!fs.existsSync(source)) continue;
+      if (fs.existsSync(target)) continue;
+      fs.symlinkSync(source, target);
+      createdSymlinks.push(name);
+    } catch (err) {
+      console.warn(`Failed to symlink directory '${name}' into worktree:`, err);
+    }
+  }
+  return createdSymlinks;
+}
+
+function copyRepoForArena(
+  repoRoot: string,
+  sandboxPath: string,
+  symlinkDirs: string[],
+): void {
+  fs.mkdirSync(sandboxPath, { recursive: true });
+  const skip = new Set(['.worktrees', ...symlinkDirs]);
+  for (const entry of fs.readdirSync(repoRoot, { withFileTypes: true })) {
+    if (skip.has(entry.name)) continue;
+    fs.cpSync(path.join(repoRoot, entry.name), path.join(sandboxPath, entry.name), {
+      recursive: true,
+      force: true,
+      dereference: false,
+      preserveTimestamps: true,
+    });
+  }
+}
+
 // --- Public functions (used by tasks.ts and register.ts) ---
 
 export async function createWorktree(
@@ -725,9 +792,7 @@ export async function createWorktree(
   try {
     await exec('git', ['rev-parse', '--verify', startRef], { cwd: repoRoot });
   } catch {
-    const isEmptyRepo = await exec('git', ['rev-list', '-n1', '--all'], { cwd: repoRoot })
-      .then(({ stdout }) => !stdout.trim())
-      .catch(() => true);
+    const isEmptyRepo = !(await repoHasCommits(repoRoot));
     if (isEmptyRepo) {
       throw new Error(
         'Cannot create a worktree in a repository with no commits. ' +
@@ -753,31 +818,53 @@ export async function createWorktree(
   if (baseBranch) worktreeArgs.push(baseBranch);
   await exec('git', worktreeArgs, { cwd: repoRoot });
 
-  // Symlink selected directories. `.claude` is handled separately below — it
-  // can't be a symlink because Claude Code's bwrap sandbox binds specific
-  // entries inside it, and bwrap refuses to bind-mount at symlink paths.
-  const createdSymlinks: string[] = [];
-  for (const name of symlinkDirs) {
-    if (name === '.claude') continue;
-    // Reject names that could escape the worktree directory
-    if (name.includes('/') || name.includes('\\') || name.includes('..') || name === '.') continue;
-    const source = path.join(repoRoot, name);
-    const target = path.join(worktreePath, name);
-    try {
-      if (!fs.existsSync(source)) continue;
-      if (fs.existsSync(target)) continue;
-      fs.symlinkSync(source, target);
-      createdSymlinks.push(name);
-    } catch (err) {
-      console.warn(`Failed to symlink directory '${name}' into worktree:`, err);
-    }
-  }
+  const createdSymlinks = createSelectedSymlinks(repoRoot, worktreePath, symlinkDirs);
 
   ensureClaudeSandboxFiles(worktreePath, repoRoot);
   ensureSandboxExcludes(worktreePath);
   ensureSymlinkExcludes(worktreePath, createdSymlinks);
 
   return { path: worktreePath, branch: branchName };
+}
+
+export async function createArenaWorktree(
+  repoRoot: string,
+  branchName: string,
+  symlinkDirs: string[],
+): Promise<{ path: string; branch: string; mergeSupported: boolean }> {
+  if (await repoHasCommits(repoRoot)) {
+    const created = await createWorktree(repoRoot, branchName, symlinkDirs, undefined, true);
+    return { ...created, mergeSupported: true };
+  }
+
+  const conflictingBranch = await findLocalBranchPrefixConflict(repoRoot, branchName);
+  if (conflictingBranch) {
+    throw new Error(
+      `Cannot create branch "${branchName}" because local branch "${conflictingBranch}" already exists. ` +
+        `Choose a branch prefix other than "${conflictingBranch}" or "${conflictingBranch}/...".`,
+    );
+  }
+
+  const sandboxPath = `${repoRoot}/.worktrees/${branchName}`;
+  await removeWorktree(repoRoot, branchName, true).catch(() => {});
+  copyRepoForArena(repoRoot, sandboxPath, symlinkDirs);
+  const createdSymlinks = createSelectedSymlinks(repoRoot, sandboxPath, symlinkDirs);
+  await ensureLocalGitIdentity(sandboxPath);
+  await exec('git', ['add', '-A'], { cwd: sandboxPath });
+  await exec('git', ['commit', '--allow-empty', '-m', 'chore(arena): initialize sandbox'], {
+    cwd: sandboxPath,
+  });
+  await exec('git', ['checkout', '-b', branchName], { cwd: sandboxPath });
+
+  ensureClaudeSandboxFiles(sandboxPath, repoRoot);
+  ensureSandboxExcludes(sandboxPath);
+  ensureSymlinkExcludes(sandboxPath, createdSymlinks);
+
+  return {
+    path: sandboxPath,
+    branch: branchName,
+    mergeSupported: false,
+  };
 }
 
 /**
