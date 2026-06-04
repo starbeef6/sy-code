@@ -15,6 +15,14 @@ function makeTempRepo(): string {
   return repoRoot;
 }
 
+function makeTempGitFileRepo(): string {
+  const repoRoot = makeTempRepo();
+  const gitDir = path.join(path.dirname(repoRoot), 'external-gitdir');
+  fs.renameSync(path.join(repoRoot, '.git'), gitDir);
+  fs.writeFileSync(path.join(repoRoot, '.git'), `gitdir: ${gitDir}\n`);
+  return repoRoot;
+}
+
 afterEach(() => {
   for (const root of tempRoots.splice(0)) {
     fs.rmSync(root, { recursive: true, force: true });
@@ -52,6 +60,25 @@ describe('createArenaWorktree', () => {
     expect(changed.some((file) => file.path === 'README.md')).toBe(true);
 
     await removeWorktree(repoRoot, 'arena/test-1', true);
+    expect(fs.existsSync(created.path)).toBe(false);
+  });
+
+  it('does not copy a source gitdir file into the arena sandbox', async () => {
+    const repoRoot = makeTempGitFileRepo();
+    fs.writeFileSync(path.join(repoRoot, 'README.md'), 'hello\n');
+
+    const created = await createArenaWorktree(repoRoot, 'arena/test-gitfile', []);
+
+    const sandboxGitEntry = path.join(created.path, '.git');
+    expect(fs.lstatSync(sandboxGitEntry).isDirectory()).toBe(true);
+
+    const resolvedGitDir = execFileSync('git', ['rev-parse', '--git-dir'], {
+      cwd: created.path,
+      encoding: 'utf8',
+    }).trim();
+    expect(resolvedGitDir).toBe('.git');
+
+    await removeWorktree(repoRoot, 'arena/test-gitfile', true);
     expect(fs.existsSync(created.path)).toBe(false);
   });
 });

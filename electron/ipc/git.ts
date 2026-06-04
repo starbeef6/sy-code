@@ -739,7 +739,7 @@ function createSelectedSymlinks(
 
 function copyRepoForArena(repoRoot: string, sandboxPath: string, symlinkDirs: string[]): void {
   fs.mkdirSync(sandboxPath, { recursive: true });
-  const skip = new Set(['.worktrees', ...symlinkDirs]);
+  const skip = new Set(['.git', '.worktrees', ...symlinkDirs]);
   for (const entry of fs.readdirSync(repoRoot, { withFileTypes: true })) {
     if (skip.has(entry.name)) continue;
     fs.cpSync(path.join(repoRoot, entry.name), path.join(sandboxPath, entry.name), {
@@ -843,6 +843,8 @@ export async function createArenaWorktree(
 
   const sandboxPath = `${repoRoot}/.worktrees/${branchName}`;
   await removeWorktree(repoRoot, branchName, true).catch(() => {});
+  fs.mkdirSync(sandboxPath, { recursive: true });
+  await exec('git', ['init', '-b', 'main'], { cwd: sandboxPath });
   copyRepoForArena(repoRoot, sandboxPath, symlinkDirs);
   const createdSymlinks = createSelectedSymlinks(repoRoot, sandboxPath, symlinkDirs);
   await ensureLocalGitIdentity(sandboxPath);
