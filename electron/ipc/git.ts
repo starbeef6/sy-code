@@ -737,11 +737,7 @@ function createSelectedSymlinks(
   return createdSymlinks;
 }
 
-function copyRepoForArena(
-  repoRoot: string,
-  sandboxPath: string,
-  symlinkDirs: string[],
-): void {
+function copyRepoForArena(repoRoot: string, sandboxPath: string, symlinkDirs: string[]): void {
   fs.mkdirSync(sandboxPath, { recursive: true });
   const skip = new Set(['.worktrees', ...symlinkDirs]);
   for (const entry of fs.readdirSync(repoRoot, { withFileTypes: true })) {
