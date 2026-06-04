@@ -28,6 +28,7 @@ import { markDirty } from '../lib/terminalFitManager';
 import { theme } from '../lib/theme';
 import { mod } from '../lib/platform';
 import { createCtrlShiftWheelResizeHandler } from '../lib/wheelZoom';
+import { t } from '../lib/i18n';
 
 const VIEWPORT_EPSILON_PX = 4;
 
@@ -310,8 +311,8 @@ export function TilingLayout() {
                             if (task) {
                               const msg =
                                 task.gitIsolation !== 'worktree' || task.externalWorktree
-                                  ? 'Close this task? Running agents and shells will be stopped.'
-                                  : 'Close this task? The worktree and branch will be deleted.';
+                                  ? t('Close this task? Running agents and shells will be stopped.')
+                                  : t('Close this task? The worktree and branch will be deleted.');
                               if (window.confirm(msg)) closeTask(panelId);
                             } else if (store.terminals[panelId]) {
                               closeTerminal(panelId);
@@ -464,10 +465,10 @@ export function TilingLayout() {
                             'margin-bottom': '6px',
                           }}
                         >
-                          Link your first project to get started
+                          {t('Link your first project to get started')}
                         </div>
                         <div style={{ 'font-size': '13px', color: theme.fgSubtle }}>
-                          A project is a local folder with your code
+                          {t('A project is a local folder with your code')}
                         </div>
                       </div>
                       <button
@@ -495,7 +496,7 @@ export function TilingLayout() {
                         >
                           <path d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.22.78 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25v-8.5A1.75 1.75 0 0 0 14.25 3H7.5a.25.25 0 0 1-.2-.1l-.9-1.2A1.75 1.75 0 0 0 5 1H1.75Z" />
                         </svg>
-                        Link Project
+                        {t('Link Project')}
                       </button>
                     </>
                   }
@@ -525,10 +526,10 @@ export function TilingLayout() {
                         'margin-bottom': '6px',
                       }}
                     >
-                      No tasks yet
+                      {t('No tasks yet')}
                     </div>
                     <div style={{ 'font-size': '13px', color: theme.fgSubtle }}>
-                      Press{' '}
+                      {t('Press')}{' '}
                       <kbd
                         style={{
                           background: theme.bgElevated,
@@ -541,7 +542,7 @@ export function TilingLayout() {
                       >
                         {mod}+N
                       </kbd>{' '}
-                      to create a new task
+                      {t('to create a new task')}
                     </div>
                   </div>
                 </Show>

@@ -1,4 +1,4 @@
-export const SUB_TASK_PREAMBLE = `[SUB-TASK MODE] You are a coordinated sub-task inside Parallel Code. A coordinator agent dispatched you to complete specific work.
+export const SUB_TASK_PREAMBLE = `[SUB-TASK MODE] You are a coordinated sub-task inside SY CODE. A coordinator agent dispatched you to complete specific work.
 
 You have two sub-task MCP tools available via the parallel-code server:
 

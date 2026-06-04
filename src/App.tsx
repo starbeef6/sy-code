@@ -85,6 +85,7 @@ import { ArenaOverlay } from './arena/ArenaOverlay';
 import { startDesktopNotificationWatcher } from './store/desktopNotifications';
 import { startPrChecksSubscription } from './store/pr-checks';
 import { startUpdateSubscription } from './store/updates';
+import { installDomI18n, t } from './lib/i18n';
 
 const MIN_WINDOW_DIMENSION = 100;
 
@@ -201,6 +202,7 @@ function App() {
   let unlistenFocusChanged: (() => void) | null = null;
   let unlistenResized: (() => void) | null = null;
   let unlistenMoved: (() => void) | null = null;
+  let stopDomI18n: (() => void) | null = null;
 
   const syncWindowFocused = async () => {
     const focused = await appWindow.isFocused().catch(() => true);
@@ -318,6 +320,8 @@ function App() {
   });
 
   onMount(async () => {
+    stopDomI18n = installDomI18n();
+
     if (isMac) {
       await appWindow.setTitleBarStyle('overlay').catch((error) => {
         console.warn('Failed to enable macOS overlay titlebar', error);
@@ -601,11 +605,13 @@ function App() {
             ? '1 running terminal session'
             : `${runningCount} running terminal sessions`;
         const selected = await choice(
-          `You have ${countLabel}. They can be restored on app restart. Kill them and quit, keep them alive in the background, or cancel?`,
+          t(
+            `You have ${countLabel}. They can be restored on app restart. Kill them and quit, keep them alive in the background, or cancel?`,
+          ),
           {
-            title: 'Running Terminals',
+            title: t('Running Terminals'),
             kind: 'warning',
-            buttons: [...CLOSE_DIALOG_BUTTONS],
+            buttons: CLOSE_DIALOG_BUTTONS.map((label) => t(label)),
             defaultId: 2,
             cancelId: 2,
           },
@@ -729,6 +735,7 @@ function App() {
       unlistenMoved?.();
       cleanupZoomShortcuts();
       cleanupJumpToTaskShortcuts();
+      stopDomI18n?.();
     });
   });
 
@@ -828,7 +835,7 @@ function App() {
             }}
           >
             <span>
-              Keyboard shortcuts are now configurable.{' '}
+              快捷键现在支持自定义。{' '}
               <button
                 type="button"
                 onClick={() => {
@@ -845,9 +852,9 @@ function App() {
                   'text-decoration': 'underline',
                 }}
               >
-                Pick a preset for your coding agent
-              </button>{' '}
-              or{' '}
+                为你的编码助手选择一个预设
+              </button>
+              ，或
               <button
                 type="button"
                 onClick={() => dismissMigrationBanner()}
@@ -861,9 +868,9 @@ function App() {
                   'text-decoration': 'underline',
                 }}
               >
-                dismiss
+                忽略
               </button>
-              .
+              。
             </span>
             <button
               onClick={() => dismissMigrationBanner()}

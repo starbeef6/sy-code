@@ -1503,7 +1503,7 @@ export class Coordinator {
       }
       await execAsync('git', ['add', '-A', '--', ...dirtyPaths], { cwd: task.worktreePath });
       try {
-        await execAsync('git', ['commit', '-m', 'Remove Parallel Code sub-task preamble'], {
+        await execAsync('git', ['commit', '-m', 'Remove SY CODE sub-task preamble'], {
           cwd: task.worktreePath,
         });
       } catch {

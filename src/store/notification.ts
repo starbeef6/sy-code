@@ -1,10 +1,11 @@
 import { setStore } from './core';
+import { t } from '../lib/i18n';
 
 let notificationTimer: ReturnType<typeof setTimeout> | null = null;
 
 export function showNotification(message: string): void {
   if (notificationTimer) clearTimeout(notificationTimer);
-  setStore('notification', message);
+  setStore('notification', t(message));
   notificationTimer = setTimeout(() => {
     setStore('notification', null);
     notificationTimer = null;

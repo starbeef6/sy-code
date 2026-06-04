@@ -1,3 +1,5 @@
+import { t } from './i18n';
+
 // Maps the close-confirmation dialog's button index to a close action.
 //
 // The dialog (shown when the window is closed with live PTY sessions) offers
@@ -6,7 +8,11 @@
 
 export type CloseAction = 'kill' | 'background' | 'abort';
 
-export const CLOSE_DIALOG_BUTTONS = ['Kill & Quit', 'Keep in Background', 'Cancel'] as const;
+export const CLOSE_DIALOG_BUTTONS = [
+  t('Kill & Quit'),
+  t('Keep in Background'),
+  t('Cancel'),
+] as const;
 
 export function resolveCloseChoice(index: number): CloseAction {
   switch (index) {

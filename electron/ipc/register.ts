@@ -1606,7 +1606,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
         appendGitExclude(
           args.worktreePath ?? args.projectRoot,
           '.parallel-code/',
-          '\n# Parallel Code Docker MCP dir\n.parallel-code/\n',
+          '\n# SY CODE Docker MCP dir\n.parallel-code/\n',
         );
       } else {
         coordinator.setDockerContainerName(args.coordinatorTaskId, null);
@@ -1654,7 +1654,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
         appendGitExclude(
           mcpJsonDir,
           '.mcp.json',
-          '\n# Parallel Code MCP config (contains ephemeral token)\n.mcp.json\n',
+          '\n# SY CODE MCP config (contains ephemeral token)\n.mcp.json\n',
         );
 
         console.warn('[MCP] .mcp.json written to:', worktreeMcpPath);

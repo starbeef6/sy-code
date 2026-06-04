@@ -29,7 +29,7 @@ describe('choice', () => {
       message: 'Pick one',
       title: 'Closing',
       kind: 'warning',
-      buttons: ['Kill & Quit', 'Keep in Background', 'Cancel'],
+      buttons: ['结束并退出', '保留在后台', '取消'],
       defaultId: 2,
       cancelId: 2,
     });

@@ -1,4 +1,12 @@
-import { app, BrowserWindow, ipcMain, session, shell } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  Menu,
+  session,
+  shell,
+  type MenuItemConstructorOptions,
+} from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -14,6 +22,13 @@ import { resolveUserShell } from './user-shell.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Keep using the official app's data directory after rebranding so existing
+// projects, tasks, and preferences remain available in SY CODE.
+if (app.isPackaged && app.getName() === 'SY CODE') {
+  const legacyUserDataPath = path.join(app.getPath('appData'), 'Parallel Code');
+  if (fs.existsSync(legacyUserDataPath)) app.setPath('userData', legacyUserDataPath);
+}
 
 // When launched from a .desktop file (e.g. AppImage), the environment is
 // minimal — often just PATH=/usr/bin:/bin. Resolve the user's full
@@ -111,6 +126,78 @@ function getIconPath(): string | undefined {
   return path.join(__dirname, '..', 'build', 'icon.png');
 }
 
+function installApplicationMenu(): void {
+  if (process.platform !== 'darwin') return;
+
+  const openRepo = () => {
+    void shell
+      .openExternal('https://github.com/johannesjo/parallel-code')
+      .catch((e: unknown) => console.warn('[menu] Failed to open repository URL:', e));
+  };
+
+  const template: MenuItemConstructorOptions[] = [
+    {
+      label: 'SY CODE',
+      submenu: [
+        { role: 'about', label: '关于 SY CODE' },
+        { type: 'separator' },
+        { role: 'services', label: '服务' },
+        { type: 'separator' },
+        { role: 'hide', label: '隐藏 SY CODE' },
+        { role: 'hideOthers', label: '隐藏其他应用' },
+        { role: 'unhide', label: '显示全部' },
+        { type: 'separator' },
+        { role: 'quit', label: '退出 SY CODE' },
+      ],
+    },
+    {
+      label: '文件',
+      submenu: [{ role: 'close', label: '关闭窗口' }],
+    },
+    {
+      label: '编辑',
+      submenu: [
+        { role: 'undo', label: '撤销' },
+        { role: 'redo', label: '重做' },
+        { type: 'separator' },
+        { role: 'cut', label: '剪切' },
+        { role: 'copy', label: '复制' },
+        { role: 'paste', label: '粘贴' },
+        { role: 'selectAll', label: '全选' },
+      ],
+    },
+    {
+      label: '视图',
+      submenu: [
+        { role: 'reload', label: '重新载入' },
+        { role: 'forceReload', label: '强制重新载入' },
+        { role: 'toggleDevTools', label: '切换开发者工具' },
+        { type: 'separator' },
+        { role: 'resetZoom', label: '实际大小' },
+        { role: 'zoomIn', label: '放大' },
+        { role: 'zoomOut', label: '缩小' },
+        { type: 'separator' },
+        { role: 'togglefullscreen', label: '切换全屏' },
+      ],
+    },
+    {
+      label: '窗口',
+      submenu: [
+        { role: 'minimize', label: '最小化' },
+        { role: 'zoom', label: '缩放' },
+        { type: 'separator' },
+        { role: 'front', label: '前置全部窗口' },
+      ],
+    },
+    {
+      label: '帮助',
+      submenu: [{ label: '打开 GitHub 仓库', click: openRepo }],
+    },
+  ];
+
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -200,6 +287,7 @@ app.whenReady().then(() => {
     },
   );
 
+  installApplicationMenu();
   createWindow();
 });
 

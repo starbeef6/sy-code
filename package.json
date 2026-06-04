@@ -1,7 +1,7 @@
 {
-  "name": "parallel-code",
+  "name": "sy-code",
   "version": "1.10.0",
-  "description": "",
+  "description": "SY CODE 中文版，多 Agent 并行编程桌面应用。",
   "author": {
     "name": "Johannes Millan",
     "email": "contact@super-productivity.com"
@@ -98,18 +98,11 @@
   },
   "build": {
     "appId": "com.parallel-code.app",
-    "productName": "Parallel Code",
+    "productName": "SY CODE",
     "directories": {
       "buildResources": "build",
       "output": "release"
     },
-    "publish": [
-      {
-        "provider": "github",
-        "owner": "johannesjo",
-        "repo": "parallel-code"
-      }
-    ],
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
@@ -151,7 +144,7 @@
       "category": "public.app-category.developer-tools",
       "hardenedRuntime": true,
       "extendInfo": {
-        "NSMicrophoneUsageDescription": "Parallel Code needs microphone access for voice input in terminal sessions."
+        "NSMicrophoneUsageDescription": "SY CODE 需要使用麦克风，以便在终端会话中进行语音输入。"
       },
       "gatekeeperAssess": false,
       "notarize": true,

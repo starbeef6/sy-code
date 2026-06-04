@@ -1,3 +1,16 @@
+# SY CODE
+
+SY CODE 是基于 [Parallel Code](https://github.com/johannesjo/parallel-code) 的完整中文优化版。桌面主界面、设置、任务管理、合并流程、Arena 和手机远程页面均已中文化；应用会继续使用原 Parallel Code 数据目录，因此替换安装后可以保留已有项目和任务。
+
+- macOS 应用名称：`SY CODE.app`
+- 默认界面语言：简体中文
+- 官方自动更新：已关闭，避免覆盖本地中文版本
+- 上游项目与许可证：Parallel Code，MIT License
+
+以下保留上游项目的完整说明：
+
+---
+
 <p align="center">
   <img src="build/logo-text-squared.svg" alt="Parallel Code" height="76">
 </p>

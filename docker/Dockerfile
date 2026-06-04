@@ -1,4 +1,4 @@
-# Parallel Code — Docker agent image
+# SY CODE — Docker agent image
 # Pre-installs common dev tools so agents don't waste time on setup.
 # Build:  docker build -t parallel-code-agent:latest docker/
 # Size target: ~600 MB (multi-stage not needed; one fat layer is fine for a dev image)

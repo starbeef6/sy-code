@@ -12,6 +12,7 @@ import {
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
 import { alt, mod } from '../lib/platform';
+import { t } from '../lib/i18n';
 
 export function SidebarFooter() {
   const mergedTasksToday = createMemo(() => getMergedTasksTodayCount());
@@ -82,7 +83,7 @@ export function SidebarFooter() {
               'letter-spacing': '0.05em',
             }}
           >
-            Progress
+            {t('Progress')}
           </span>
           <div
             style={{
@@ -204,7 +205,7 @@ export function SidebarFooter() {
               'letter-spacing': '0.05em',
             }}
           >
-            Tips
+            {t('Tips')}
           </span>
           <span
             style={{
@@ -225,7 +226,7 @@ export function SidebarFooter() {
             >
               {alt} + Arrows
             </kbd>{' '}
-            to navigate panels
+            {t('to navigate panels')}
           </span>
           <span
             style={{
@@ -246,7 +247,7 @@ export function SidebarFooter() {
             >
               {mod} + /
             </kbd>{' '}
-            for all shortcuts
+            {t('for all shortcuts')}
           </span>
         </div>
       </Show>

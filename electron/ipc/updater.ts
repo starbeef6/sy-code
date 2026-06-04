@@ -51,6 +51,9 @@ export interface UpdateStatus {
 // (e.g. a unit test), so guard every access.
 function isAutoUpdateSupported(): boolean {
   if (!app?.isPackaged) return false;
+  // SY CODE is a locally maintained fork. The upstream update channel would
+  // replace it with the official English build.
+  if (app.getName() === 'SY CODE') return false;
   if (process.platform === 'darwin') return true;
   if (process.platform === 'linux') return !!process.env.APPIMAGE;
   return false;

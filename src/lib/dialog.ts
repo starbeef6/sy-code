@@ -1,6 +1,7 @@
 // Dialog — wraps Electron dialog IPC calls.
 
 import { IPC } from '../../electron/ipc/channels';
+import { t } from './i18n';
 
 interface ConfirmOptions {
   title?: string;
@@ -11,8 +12,11 @@ interface ConfirmOptions {
 
 export async function confirm(message: string, options?: ConfirmOptions): Promise<boolean> {
   return window.electron.ipcRenderer.invoke(IPC.DialogConfirm, {
-    message,
     ...options,
+    message: t(message),
+    title: options?.title ? t(options.title) : undefined,
+    okLabel: options?.okLabel ? t(options.okLabel) : undefined,
+    cancelLabel: options?.cancelLabel ? t(options.cancelLabel) : undefined,
   }) as Promise<boolean>;
 }
 
@@ -29,8 +33,10 @@ interface ChoiceOptions {
 /** Multi-button dialog. Resolves to the index of the chosen button. */
 export async function choice(message: string, options: ChoiceOptions): Promise<number> {
   return window.electron.ipcRenderer.invoke(IPC.DialogChoice, {
-    message,
     ...options,
+    message: t(message),
+    title: options.title ? t(options.title) : undefined,
+    buttons: options.buttons.map((button) => t(button)),
   }) as Promise<number>;
 }
 

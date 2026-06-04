@@ -45,6 +45,7 @@ import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
 import { mod } from '../lib/platform';
 import { invoke } from '../lib/ipc';
+import { t } from '../lib/i18n';
 import { IPC } from '../../electron/ipc/channels';
 import type { ImportableWorktree } from '../ipc/types';
 
@@ -397,7 +398,7 @@ export function Sidebar() {
                 'font-family': "'JetBrains Mono', monospace",
               }}
             >
-              ParallelCode
+              SY CODE
             </span>
           </div>
           <div style={{ display: 'flex', gap: '6px' }}>
@@ -606,7 +607,7 @@ export function Sidebar() {
 
                 <Show when={store.projects.length === 0}>
                   <span style={{ 'font-size': sf(11), color: theme.fgSubtle, padding: '0 2px' }}>
-                    No projects linked yet.
+                    {t('No projects linked yet.')}
                   </span>
                 </Show>
               </div>
@@ -648,7 +649,7 @@ export function Sidebar() {
               >
                 <path d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.22.78 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25v-8.5A1.75 1.75 0 0 0 14.25 3H7.5a.25.25 0 0 1-.2-.1l-.9-1.2A1.75 1.75 0 0 0 5 1H1.75Z" />
               </svg>
-              Link Project
+              {t('Link Project')}
             </button>
           }
         >
@@ -782,7 +783,7 @@ export function Sidebar() {
                 padding: '0 2px',
               }}
             >
-              Other (
+              {t('Other')} (
               {groupedTasks().orphanedActive.length + groupedTasks().orphanedCollapsed.length})
             </span>
             <For each={groupedTasks().orphanedActive}>

@@ -88,7 +88,7 @@ export interface CoordinatorState {
   propagateSkipPermissions: boolean;
   /** Path to the .mcp.json file written for this coordinator. */
   mcpJsonPath: string;
-  /** True if Parallel Code created .mcp.json from scratch; false if it was pre-existing. */
+  /** True if SY CODE created .mcp.json from scratch; false if it was pre-existing. */
   createdMcpJson: boolean;
   /** Previous value of mcpServers["parallel-code"] before this coordinator wrote its entry, if any. */
   previousMcpParallelCode?: unknown;

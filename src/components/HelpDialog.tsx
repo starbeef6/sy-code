@@ -6,6 +6,7 @@ import { isMac } from '../lib/platform';
 import { PRESETS } from '../lib/keybindings';
 import type { KeyBinding, Modifiers } from '../lib/keybindings';
 import { store } from '../store/store';
+import { t } from '../lib/i18n';
 import {
   allBindings,
   selectPreset,
@@ -202,7 +203,9 @@ export function HelpDialog(props: HelpDialogProps) {
   }
 
   async function handleResetAll() {
-    const confirmed = await appConfirm('Reset all keybindings to defaults for the current preset?');
+    const confirmed = await appConfirm(
+      t('Reset all keybindings to defaults for the current preset?'),
+    );
     if (confirmed) {
       resetAllBindings();
     }
@@ -218,8 +221,8 @@ export function HelpDialog(props: HelpDialogProps) {
     if (binding.escapeSequence) {
       return '\u2192 ' + escapeSequenceName(binding.escapeSequence);
     }
-    if (binding.action === 'copy') return '\u2192 Copy';
-    if (binding.action === 'paste') return '\u2192 Paste';
+    if (binding.action === 'copy') return '\u2192 ' + t('Copy');
+    if (binding.action === 'paste') return '\u2192 ' + t('Paste');
     return null;
   }
 
@@ -243,7 +246,7 @@ export function HelpDialog(props: HelpDialogProps) {
           id={titleId}
           style={{ margin: '0', 'font-size': '17px', color: theme.fg, 'font-weight': '600' }}
         >
-          Keyboard Shortcuts
+          {t('Keyboard Shortcuts')}
         </h2>
         <button
           onClick={() => props.onClose()}
@@ -289,7 +292,7 @@ export function HelpDialog(props: HelpDialogProps) {
             {(preset) => (
               <option value={preset.id}>
                 {preset.name}
-                {preset.id === store.keybindingPreset && hasOverrides() ? ' (modified)' : ''}
+                {preset.id === store.keybindingPreset && hasOverrides() ? '（已修改）' : ''}
               </option>
             )}
           </For>
@@ -307,7 +310,7 @@ export function HelpDialog(props: HelpDialogProps) {
             'white-space': 'nowrap',
           }}
         >
-          Reset All
+          {t('Reset All')}
         </button>
       </div>
 
@@ -324,7 +327,7 @@ export function HelpDialog(props: HelpDialogProps) {
                 'font-weight': '600',
               }}
             >
-              {section.category}
+              {t(section.category)}
             </div>
             <For each={section.bindings}>
               {(binding) => {
@@ -360,7 +363,7 @@ export function HelpDialog(props: HelpDialogProps) {
                             ...(binding.unbound ? { opacity: '0.5' } : {}),
                           }}
                         >
-                          {binding.description}
+                          {t(binding.description)}
                         </span>
                         <Show when={secondary}>
                           <span style={{ color: theme.fgSubtle, 'font-size': '10px' }}>
@@ -372,7 +375,7 @@ export function HelpDialog(props: HelpDialogProps) {
                         <Show when={overridden()}>
                           <button
                             onClick={() => clearUserOverride(binding.id)}
-                            title="Reset to default"
+                            title={t('Reset to default')}
                             style={{
                               background: 'transparent',
                               border: 'none',
@@ -391,8 +394,8 @@ export function HelpDialog(props: HelpDialogProps) {
                           tabIndex={0}
                           aria-label={
                             binding.unbound
-                              ? `${binding.description}: unbound, click to assign`
-                              : `${binding.description}: ${formatKeyCombo(binding)}, click to rebind`
+                              ? `${t(binding.description)}：未绑定，点击分配`
+                              : `${t(binding.description)}：${formatKeyCombo(binding)}，点击重新绑定`
                           }
                           onClick={() => {
                             if (recording()) {
@@ -441,7 +444,7 @@ export function HelpDialog(props: HelpDialogProps) {
                           }}
                         >
                           {recording()
-                            ? 'Press shortcut...'
+                            ? t('Press shortcut...')
                             : binding.unbound
                               ? '\u2014'
                               : formatKeyCombo(binding)}
@@ -468,8 +471,8 @@ export function HelpDialog(props: HelpDialogProps) {
                           }}
                         >
                           <span>
-                            Already used by &ldquo;{info().conflicting.description}&rdquo; (
-                            {info().conflicting.layer})
+                            已被“{t(info().conflicting.description)}”占用（
+                            {t(info().conflicting.layer)}）
                           </span>
                           <div style={{ display: 'flex', gap: '6px' }}>
                             <button
@@ -484,7 +487,7 @@ export function HelpDialog(props: HelpDialogProps) {
                                 cursor: 'pointer',
                               }}
                             >
-                              Override
+                              {t('Override')}
                             </button>
                             <button
                               onClick={handleSwap}
@@ -498,7 +501,7 @@ export function HelpDialog(props: HelpDialogProps) {
                                 cursor: 'pointer',
                               }}
                             >
-                              Swap
+                              {t('Swap')}
                             </button>
                             <button
                               onClick={handleConflictCancel}
@@ -512,7 +515,7 @@ export function HelpDialog(props: HelpDialogProps) {
                                 cursor: 'pointer',
                               }}
                             >
-                              Cancel
+                              {t('Cancel')}
                             </button>
                           </div>
                         </div>
