@@ -1,5 +1,3 @@
-// Core IPC — wraps Electron's ipcRenderer for frontend-backend communication.
-
 import { IPC } from '../../electron/ipc/channels';
 
 declare global {
@@ -11,58 +9,23 @@ declare global {
         removeAllListeners: (channel: string) => void;
       };
       setZoomFactor: (factor: number) => void;
-      /** Returns the absolute filesystem path for a File from a drop event,
-       *  or '' for File objects without a backing path (e.g. browser image). */
       getPathForFile: (file: File) => string;
     };
   }
 }
 
-export class Channel<T> {
-  private _id = crypto.randomUUID();
-  cleanup: (() => void) | null = null;
-  onmessage: ((msg: T) => void) | null = null;
-
-  constructor() {
-    this.cleanup = window.electron.ipcRenderer.on(`channel:${this._id}`, (msg: unknown) => {
-      this.onmessage?.(msg as T);
-    });
-  }
-
-  get id() {
-    return this._id;
-  }
-
-  toJSON() {
-    return { __CHANNEL_ID__: this._id };
-  }
-
-  dispose(): void {
-    this.cleanup?.();
-    this.cleanup = null;
-    this.onmessage = null;
-  }
-}
-
 export async function invoke<T>(cmd: IPC, args?: Record<string, unknown>): Promise<T> {
-  // JSON round-trip ensures all args are structured-clone-safe.
-  // Triggers Channel.toJSON() to replace Channel instances with
-  // plain { __CHANNEL_ID__: id } objects.
   const safeArgs = args ? (JSON.parse(JSON.stringify(args)) as Record<string, unknown>) : undefined;
   return window.electron.ipcRenderer.invoke(cmd, safeArgs) as Promise<T>;
 }
 
 /**
- * Invoke an IPC command without awaiting the result.
- * Logs errors to console and optionally calls onError for user-visible feedback.
+ * Subscribe to a main → renderer event channel. Returns an unsubscribe fn.
+ * No-op (returns a noop) when not running inside Electron.
  */
-export function fireAndForget(
-  cmd: IPC,
-  args?: Record<string, unknown>,
-  onError?: (err: unknown) => void,
-): void {
-  invoke(cmd, args).catch((err: unknown) => {
-    console.error(`[IPC] ${cmd} failed:`, err);
-    onError?.(err);
-  });
+export function subscribe<T>(channel: IPC, listener: (payload: T) => void): () => void {
+  if (typeof window === 'undefined' || typeof window.electron?.ipcRenderer?.on !== 'function') {
+    return () => undefined;
+  }
+  return window.electron.ipcRenderer.on(channel, (payload) => listener(payload as T));
 }

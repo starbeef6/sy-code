@@ -1,56 +1,40 @@
-import {
-  app,
-  BrowserWindow,
-  ipcMain,
-  Menu,
-  session,
-  shell,
-  type MenuItemConstructorOptions,
-} from 'electron';
-import path from 'path';
+import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, screen, session, shell } from 'electron';
+import { execFile } from 'child_process';
 import fs from 'fs';
+import path from 'path';
 import { fileURLToPath } from 'url';
-import { execFileSync } from 'child_process';
-import { registerAllHandlers } from './ipc/register.js';
-import { registerLogHandler } from './log.js';
-import { installIpcTracing } from './ipc/trace.js';
-import { killAllAgents } from './ipc/pty.js';
-import { stopAllPlanWatchers } from './ipc/plans.js';
-import { stopAllStepsWatchers } from './ipc/steps.js';
+import { promisify } from 'util';
 import { IPC } from './ipc/channels.js';
+import { registerAllHandlers } from './ipc/register.js';
 import { resolveUserShell } from './user-shell.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Keep using the official app's data directory after rebranding so existing
-// projects, tasks, and preferences remain available in SY CODE.
-if (app.isPackaged && app.getName() === 'SY CODE') {
-  const legacyUserDataPath = path.join(app.getPath('appData'), 'Parallel Code');
-  if (fs.existsSync(legacyUserDataPath)) app.setPath('userData', legacyUserDataPath);
-}
+// Custom scheme so the pet window can show GIFs the user drags in from anywhere
+// on disk (file:// is blocked under the renderer's CSP).
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'pet-asset',
+    privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
+  },
+]);
 
-// When launched from a .desktop file (e.g. AppImage), the environment is
-// minimal — often just PATH=/usr/bin:/bin. Resolve the user's full
-// login-interactive shell environment and merge it into process.env so
-// spawned PTYs can find CLI tools (claude, codex, gemini, etc.) and
-// inherit other expected variables (SSH_AGENT_LAUNCHER, KUBECONFIG, etc.).
-//
-// Uses -ilc (interactive + login) to source both .zprofile/.profile AND
-// .zshrc/.bashrc, where version managers (nvm, volta, fnm) add to PATH.
-// A perl one-liner dumps every env var as null-delimited key=value pairs,
-// bounded by sentinel markers to isolate the data from noisy shell init.
-//
-// Trade-off: -i (interactive) triggers .zshrc side effects (compinit, conda,
-// welcome messages). Login-only (-lc) would be quieter but would miss tools
-// that are only added to PATH in .bashrc/.zshrc (e.g. nvm). We accept the
-// side effects since the sentinel-based parsing discards all other output.
-// Another trade-off: inheriting the *full* environment (rather than just PATH)
-// can pull in large variables (certificates, tokens, kubeconfig). We set a
-// generous maxBuffer and fall back to the original environment on failure.
-//
-// Skip vars that would alter Electron/Node runtime behavior if a user's shell
-// rc sets them — those belong to our process, not the login shell.
+const IMAGE_MIME: Record<string, string> = {
+  '.gif': 'image/gif',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.apng': 'image/apng',
+};
+
+let petWindow: BrowserWindow | null = null;
+let mainWindow: BrowserWindow | null = null;
+// IPC handlers register exactly once; we keep the PtyManager around so quit can
+// tear every live terminal down centrally (see app.on('before-quit')).
+let ptyManager: ReturnType<typeof registerAllHandlers> | null = null;
+
 const PROTECTED_ENV_KEYS = new Set([
   'ELECTRON_RUN_AS_NODE',
   'NODE_OPTIONS',
@@ -61,12 +45,20 @@ const PROTECTED_ENV_KEYS = new Set([
   'DYLD_LIBRARY_PATH',
 ]);
 
-function fixEnv(): void {
+const execFileAsync = promisify(execFile);
+
+/**
+ * Import the user's login-shell environment (PATH, API keys, …) into
+ * process.env. Runs in the background so the window can open immediately;
+ * heavy zsh setups (conda, nvm, plugins) can take seconds. Handlers that
+ * spawn CLIs or probe PATH await the returned promise (never rejects).
+ */
+async function fixEnv(): Promise<void> {
   if (process.platform === 'win32') return;
   try {
     const loginShell = resolveUserShell();
-    const sentinel = '__PCODE_ENV__';
-    const result = execFileSync(
+    const sentinel = '__AI_TERMINAL_HUB_ENV__';
+    const { stdout: result } = await execFileAsync(
       loginShell,
       [
         '-ilc',
@@ -92,62 +84,20 @@ function fixEnv(): void {
   }
 }
 
-fixEnv();
-
-// Verify that preload.cjs ALLOWED_CHANNELS stays in sync with the IPC enum.
-// Logs a warning in dev if they drift — catches mismatches before they hit users.
-function verifyPreloadAllowlist(): void {
-  try {
-    const preloadPath = path.join(__dirname, '..', 'electron', 'preload.cjs');
-    const preloadSrc = fs.readFileSync(preloadPath, 'utf8');
-    const enumValues = new Set(Object.values(IPC));
-    const hasChannel = (channel: string) =>
-      preloadSrc.includes(`'${channel}'`) || preloadSrc.includes(`"${channel}"`);
-    const missing = [...enumValues].filter((v) => !hasChannel(v));
-    if (missing.length > 0) {
-      console.warn(
-        `[preload-sync] IPC channels missing from preload.cjs ALLOWED_CHANNELS: ${missing.join(', ')}`,
-      );
-    }
-  } catch {
-    // Preload file may not be readable in packaged app — skip check
-  }
-}
-
-if (!app.isPackaged) verifyPreloadAllowlist();
-
-let mainWindow: BrowserWindow | null = null;
-
-function getIconPath(): string | undefined {
-  if (process.platform !== 'linux') return undefined;
-  if (app.isPackaged) {
-    return path.join(process.resourcesPath, 'icon.png');
-  }
-  return path.join(__dirname, '..', 'build', 'icon.png');
-}
-
 function installApplicationMenu(): void {
   if (process.platform !== 'darwin') return;
 
-  const openRepo = () => {
-    void shell
-      .openExternal('https://github.com/johannesjo/parallel-code')
-      .catch((e: unknown) => console.warn('[menu] Failed to open repository URL:', e));
-  };
-
-  const template: MenuItemConstructorOptions[] = [
+  const template: Electron.MenuItemConstructorOptions[] = [
     {
-      label: 'SY CODE',
+      label: 'AI Terminal Hub',
       submenu: [
-        { role: 'about', label: '关于 SY CODE' },
+        { role: 'about', label: '关于 AI Terminal Hub' },
         { type: 'separator' },
-        { role: 'services', label: '服务' },
-        { type: 'separator' },
-        { role: 'hide', label: '隐藏 SY CODE' },
+        { role: 'hide', label: '隐藏 AI Terminal Hub' },
         { role: 'hideOthers', label: '隐藏其他应用' },
         { role: 'unhide', label: '显示全部' },
         { type: 'separator' },
-        { role: 'quit', label: '退出 SY CODE' },
+        { role: 'quit', label: '退出 AI Terminal Hub' },
       ],
     },
     {
@@ -178,6 +128,8 @@ function installApplicationMenu(): void {
         { role: 'zoomOut', label: '缩小' },
         { type: 'separator' },
         { role: 'togglefullscreen', label: '切换全屏' },
+        { type: 'separator' },
+        { label: '显示/隐藏 宠物', accelerator: 'CmdOrCtrl+Shift+P', click: () => togglePet() },
       ],
     },
     {
@@ -189,21 +141,33 @@ function installApplicationMenu(): void {
         { role: 'front', label: '前置全部窗口' },
       ],
     },
-    {
-      label: '帮助',
-      submenu: [{ label: '打开 GitHub 仓库', click: openRepo }],
-    },
   ];
 
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-function createWindow() {
+function createWindow(): void {
+  // Re-opening from the Dock (or a second launch) should surface the existing
+  // window, not spawn another one.
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+    return;
+  }
+
+  // Open large by default (sized to the screen's work area) so the interactive
+  // terminals are comfortably tall without the user resizing every launch.
+  const { width: screenW, height: screenH } = screen.getPrimaryDisplay().workAreaSize;
+  const width = Math.min(1600, Math.round(screenW * 0.92));
+  const height = Math.round(screenH * 0.94);
+
   mainWindow = new BrowserWindow({
-    width: 1400,
-    height: 900,
-    icon: getIconPath(),
-    frame: process.platform === 'darwin',
+    width,
+    height,
+    minWidth: 980,
+    minHeight: 640,
+    title: 'AI Terminal Hub',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : undefined,
     resizable: true,
     webPreferences: {
@@ -213,90 +177,193 @@ function createWindow() {
     },
   });
 
-  // Order matters: register the LogFromRenderer handler BEFORE installing
-  // the IPC tracing wrapper so log forwards don't themselves emit ipc/git
-  // debug traces (which would triple log volume in dev/verbose).
-  registerLogHandler(ipcMain);
-  installIpcTracing(ipcMain);
-  registerAllHandlers(mainWindow);
+  mainWindow.on('closed', () => {
+    if (petWindow && !petWindow.isDestroyed()) petWindow.close();
+    mainWindow = null;
+  });
 
-  // Open links in external browser instead of inside Electron
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('http:') || url.startsWith('https:')) {
-      shell
-        .openExternal(url)
-        .catch((e: unknown) => console.warn('[main] Failed to open external URL:', e));
+      void shell.openExternal(url);
     }
     return { action: 'deny' };
   });
 
-  const devOrigin = process.env.VITE_DEV_SERVER_URL;
-  let allowedOrigin: string | undefined;
-  try {
-    if (devOrigin) allowedOrigin = new URL(devOrigin).origin;
-  } catch {
-    // Malformed dev URL — skip origin allowlist
+  const devUrl = process.env.VITE_DEV_SERVER_URL;
+  if (devUrl) {
+    void mainWindow.loadURL(devUrl);
+  } else {
+    void mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
+}
 
-  mainWindow.webContents.on('will-navigate', (event, url) => {
-    if (allowedOrigin && url.startsWith(allowedOrigin)) return;
-    if (url.startsWith('file://')) return;
-    event.preventDefault();
-    if (url.startsWith('http:') || url.startsWith('https:')) {
-      shell
-        .openExternal(url)
-        .catch((e: unknown) => console.warn('[main] Failed to open external URL:', e));
-    }
+/** Re-anchor the pet window to the bottom-right of the work area at a new size. */
+function anchorPetBottomRight(width: number, height: number): void {
+  if (!petWindow || petWindow.isDestroyed()) return;
+  const { x, y, width: aw, height: ah } = screen.getPrimaryDisplay().workArea;
+  const nx = Math.round(x + aw - width - 24);
+  const ny = Math.round(y + ah - height - 24);
+  petWindow.setBounds({ x: nx, y: ny, width, height });
+}
+
+function createPetWindow(): void {
+  if (petWindow && !petWindow.isDestroyed()) {
+    petWindow.show();
+    petWindow.focus();
+    return;
+  }
+  petWindow = new BrowserWindow({
+    width: 200,
+    height: 220,
+    minWidth: 160,
+    minHeight: 160,
+    frame: false,
+    transparent: true,
+    resizable: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    hasShadow: false,
+    fullscreenable: false,
+    webPreferences: {
+      preload: path.join(__dirname, '..', 'electron', 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
   });
+  petWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  anchorPetBottomRight(200, 220);
 
-  // Inject CSS to make data-tauri-drag-region work in Electron
-  mainWindow.webContents.on('did-finish-load', () => {
-    mainWindow?.webContents.insertCSS(`
-      [data-tauri-drag-region] { -webkit-app-region: drag; }
-      [data-tauri-drag-region] button,
-      [data-tauri-drag-region] input,
-      [data-tauri-drag-region] select,
-      [data-tauri-drag-region] textarea { -webkit-app-region: no-drag; }
-    `);
+  petWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('http:') || url.startsWith('https:')) void shell.openExternal(url);
+    return { action: 'deny' };
   });
 
   const devUrl = process.env.VITE_DEV_SERVER_URL;
   if (devUrl) {
-    mainWindow.loadURL(devUrl);
+    void petWindow.loadURL(`${devUrl}?window=pet`);
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+    void petWindow.loadFile(path.join(__dirname, '../dist/index.html'), {
+      query: { window: 'pet' },
+    });
   }
 
-  mainWindow.on('closed', () => {
-    mainWindow = null;
+  petWindow.on('closed', () => {
+    petWindow = null;
   });
 }
 
-app.whenReady().then(() => {
-  // Grant microphone and clipboard access (deny camera/video)
-  session.defaultSession.setPermissionRequestHandler(
-    (_webContents, permission, callback, details) => {
-      if (permission === 'clipboard-read' || permission === 'clipboard-sanitized-write') {
-        return callback(true);
-      }
-      if (permission === 'media') {
-        const types = (details as { mediaTypes?: string[] }).mediaTypes ?? [];
-        return callback(types.every((t) => t === 'audio'));
-      }
-      callback(false);
-    },
-  );
+function togglePet(): void {
+  if (petWindow && !petWindow.isDestroyed()) {
+    if (petWindow.isVisible()) petWindow.hide();
+    else {
+      petWindow.show();
+      petWindow.focus();
+    }
+  } else {
+    createPetWindow();
+  }
+}
 
-  installApplicationMenu();
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) app.quit();
+
+// A second launch — or clicking the Dock icon on macOS — must surface the
+// window we already have instead of starting a parallel copy. createWindow()
+// reuses the existing window (restoring it if minimized), so both are safe.
+app.on('second-instance', () => createWindow());
+app.on('activate', () => {
   createWindow();
+  // The always-on-top pet window keeps the app "alive" with a visible window,
+  // so a Dock click may not bring the app forward on its own. Force it, or a
+  // restored-from-minimized main window can stay stuck behind other apps.
+  if (process.platform === 'darwin') app.focus({ steal: true });
 });
 
-app.on('before-quit', () => {
-  killAllAgents();
-  stopAllPlanWatchers();
-  stopAllStepsWatchers();
+app.whenReady().then(() => {
+  if (!gotTheLock) return; // losing instance: do nothing, we're already quitting
+
+  // Kick the login-shell env import off in the background instead of blocking
+  // window creation on it (it can take seconds on heavy shell setups). The
+  // PATH-dependent IPC handlers await this promise before spawning anything.
+  const envReady = fixEnv();
+
+  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback, details) => {
+    if (permission === 'clipboard-read' || permission === 'clipboard-sanitized-write') {
+      callback(true);
+      return;
+    }
+    if (permission === 'media') {
+      const types = (details as { mediaTypes?: string[] }).mediaTypes ?? [];
+      callback(types.every((type) => type === 'audio'));
+      return;
+    }
+    callback(false);
+  });
+
+  // Serve user-chosen GIFs (any path) to the pet window.
+  protocol.handle('pet-asset', async (request) => {
+    try {
+      const filePath = decodeURIComponent(new URL(request.url).pathname);
+      const data = await fs.promises.readFile(filePath);
+      const mime = IMAGE_MIME[path.extname(filePath).toLowerCase()] ?? 'application/octet-stream';
+      return new Response(new Uint8Array(data), { headers: { 'content-type': mime } });
+    } catch {
+      return new Response('not found', { status: 404 });
+    }
+  });
+
+  ipcMain.handle(IPC.PetSetSize, (_e, args) => {
+    if (!petWindow || petWindow.isDestroyed()) return;
+    const width = Math.max(160, Math.round(Number(args?.width) || 200));
+    const height = Math.max(160, Math.round(Number(args?.height) || 220));
+    // Keep the pet's CURRENT bottom-right corner fixed (where the user dragged
+    // it); the panel grows up/left from there instead of snapping to a corner.
+    const b = petWindow.getBounds();
+    const wa = screen.getDisplayMatching(b).workArea;
+    let x = b.x + b.width - width;
+    let y = b.y + b.height - height;
+    x = Math.max(wa.x, Math.min(x, wa.x + wa.width - width));
+    y = Math.max(wa.y, Math.min(y, wa.y + wa.height - height));
+    petWindow.setBounds({ x, y, width, height });
+  });
+
+  ipcMain.handle(IPC.PetPickImages, async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile', 'multiSelections'],
+      filters: [{ name: 'Images', extensions: ['gif', 'png', 'jpg', 'jpeg', 'webp', 'apng'] }],
+    });
+    return result.canceled ? [] : result.filePaths;
+  });
+
+  ipcMain.handle(IPC.PetReadImage, async (_e, args) => {
+    try {
+      const filePath = typeof args?.path === 'string' ? args.path : '';
+      if (!filePath) return '';
+      const data = await fs.promises.readFile(filePath);
+      const mime = IMAGE_MIME[path.extname(filePath).toLowerCase()] ?? 'image/png';
+      return `data:${mime};base64,${data.toString('base64')}`;
+    } catch {
+      return '';
+    }
+  });
+
+  ipcMain.handle(IPC.PetToggle, () => togglePet());
+
+  // Register IPC handlers exactly once and keep the PtyManager for quit-time
+  // teardown; windows are then free to come and go (Dock reopen, etc.).
+  ptyManager = registerAllHandlers(envReady);
+  installApplicationMenu();
+  createWindow();
+  createPetWindow();
 });
 
 app.on('window-all-closed', () => {
   app.quit();
+});
+
+app.on('before-quit', () => {
+  // Tear every live terminal down up front. A lingering CLI grandchild keeps
+  // node-pty's helper thread — and thus Electron's event loop — alive, which is
+  // what previously left the app unquittable without a manual force-quit.
+  ptyManager?.killAll();
 });

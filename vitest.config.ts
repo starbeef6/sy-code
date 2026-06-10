@@ -5,7 +5,7 @@ export default defineConfig({
   plugins: [solidPlugin({ ssr: true })],
   test: {
     environment: 'node',
-    include: ['src/**/*.test.ts', 'electron/**/*.test.ts', 'scripts/**/*.test.mjs'],
+    include: ['src/**/*.test.ts', 'electron/**/*.test.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html', 'json-summary'],
@@ -14,7 +14,6 @@ export default defineConfig({
         'coverage/**',
         'dist/**',
         'dist-electron/**',
-        'dist-remote/**',
         'build/**',
         '**/*.test.ts',
       ],
