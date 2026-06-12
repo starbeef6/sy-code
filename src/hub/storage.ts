@@ -1,5 +1,7 @@
 import { DEFAULT_AGENT_CONFIGS, HUB_STORAGE_KEY } from './defaults';
-import type { HubAgentConfig, HubPreferences } from './types';
+import type { HubAgentConfig, HubPreferences, HubRecentTask } from './types';
+
+const RECENT_TASKS_CAP = 8;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -62,6 +64,22 @@ function normalizeKnownCommand(agentId: string, savedCommand: string, defaultCom
   return trimmed;
 }
 
+function normalizeRecentTask(raw: unknown): HubRecentTask | null {
+  if (!isRecord(raw)) return null;
+  if (typeof raw.taskFolder !== 'string' || !raw.taskFolder.trim()) return null;
+  return {
+    taskFolder: raw.taskFolder,
+    taskName: typeof raw.taskName === 'string' && raw.taskName ? raw.taskName : raw.taskFolder,
+    lastOpenedAt: typeof raw.lastOpenedAt === 'number' ? raw.lastOpenedAt : 0,
+  };
+}
+
+/** Newest-first, deduped by folder, capped — for the home quick-open list. */
+export function pushRecentTask(list: HubRecentTask[], entry: HubRecentTask): HubRecentTask[] {
+  const rest = list.filter((task) => task.taskFolder !== entry.taskFolder);
+  return [entry, ...rest].slice(0, RECENT_TASKS_CAP);
+}
+
 function mergeAgentConfigs(stored: HubAgentConfig[] | null): HubAgentConfig[] {
   const byId = new Map((stored ?? []).map((agent) => [agent.id, agent]));
   const defaults = DEFAULT_AGENT_CONFIGS.map((agent) => {
@@ -81,45 +99,43 @@ function mergeAgentConfigs(stored: HubAgentConfig[] | null): HubAgentConfig[] {
   return [...defaults, ...custom];
 }
 
+function fallbackPreferences(defaultTaskRoot: string): HubPreferences {
+  return {
+    taskRoot: defaultTaskRoot,
+    taskRootLocked: true,
+    agentConfigLocked: true,
+    aiConfigs: DEFAULT_AGENT_CONFIGS,
+    recentTasks: [],
+  };
+}
+
 export function loadHubPreferences(defaultTaskRoot: string): HubPreferences {
-  if (typeof localStorage === 'undefined') {
-    return {
-      taskRoot: defaultTaskRoot,
-      taskRootLocked: true,
-      agentConfigLocked: true,
-      aiConfigs: DEFAULT_AGENT_CONFIGS,
-    };
-  }
+  if (typeof localStorage === 'undefined') return fallbackPreferences(defaultTaskRoot);
 
   try {
     const raw = localStorage.getItem(HUB_STORAGE_KEY);
-    if (!raw) {
-      return {
-        taskRoot: defaultTaskRoot,
-        taskRootLocked: true,
-        agentConfigLocked: true,
-        aiConfigs: DEFAULT_AGENT_CONFIGS,
-      };
-    }
+    if (!raw) return fallbackPreferences(defaultTaskRoot);
 
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     const storedAgents = Array.isArray(parsed.aiConfigs)
       ? parsed.aiConfigs.map(normalizeAgentConfig).filter((agent): agent is HubAgentConfig => agent !== null)
       : null;
+    const recentTasks = Array.isArray(parsed.recentTasks)
+      ? parsed.recentTasks
+          .map(normalizeRecentTask)
+          .filter((task): task is HubRecentTask => task !== null)
+          .slice(0, RECENT_TASKS_CAP)
+      : [];
 
     return {
       taskRoot: typeof parsed.taskRoot === 'string' && parsed.taskRoot.trim() ? parsed.taskRoot : defaultTaskRoot,
       taskRootLocked: parsed.taskRootLocked !== false,
       agentConfigLocked: parsed.agentConfigLocked !== false,
       aiConfigs: mergeAgentConfigs(storedAgents),
+      recentTasks,
     };
   } catch {
-    return {
-      taskRoot: defaultTaskRoot,
-      taskRootLocked: true,
-      agentConfigLocked: true,
-      aiConfigs: DEFAULT_AGENT_CONFIGS,
-    };
+    return fallbackPreferences(defaultTaskRoot);
   }
 }
 

@@ -355,6 +355,75 @@ a,
   background: #fff;
 }
 
+/* --- recent tasks (home quick-open) ---------------------------------------- */
+.hub-recent {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hub-recent-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 8px;
+}
+
+.hub-recent-item {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.hub-recent-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 9px 12px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.hub-recent-open:hover {
+  background: var(--panel-soft);
+}
+
+.hub-recent-open strong {
+  font-size: 0.92rem;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hub-recent-open span {
+  max-width: 100%;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hub-recent-remove {
+  flex-shrink: 0;
+  width: 30px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.hub-recent-remove:hover {
+  color: var(--danger);
+  background: #fef3f2;
+}
+
 .hub-field {
   display: flex;
   flex-direction: column;
@@ -889,6 +958,12 @@ input[type='checkbox']:focus-visible {
   border-radius: 12px;
   overflow: hidden;
   background: #0a0d14;
+  transition: border-color var(--duration-fast) var(--ease-out-expo);
+}
+
+/* Make it obvious which pane currently owns the keyboard. */
+.hub-terminal-pane:focus-within {
+  border-color: rgba(122, 162, 247, 0.55);
 }
 
 .hub-terminal-pane-head {
@@ -899,17 +974,64 @@ input[type='checkbox']:focus-visible {
   padding: 7px 12px;
   background: rgba(122, 162, 247, 0.08);
   border-bottom: 1px solid rgba(122, 162, 247, 0.15);
+  /* The pane is dark; don't inherit the app's light-theme text color. */
+  color: #d7dce5;
+}
+
+.hub-terminal-pane-title,
+.hub-terminal-pane-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
 .hub-terminal-pane-name {
   font-weight: 600;
   font-size: 13px;
+  white-space: nowrap;
 }
 
 .hub-terminal-pane-cmd {
   font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 11px;
-  opacity: 0.6;
+  color: #8b93a3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hub-terminal-dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #6b7280;
+}
+
+.hub-terminal-dot.is-live {
+  background: #34d399;
+  box-shadow: 0 0 6px rgba(52, 211, 153, 0.6);
+}
+
+.hub-terminal-dot.is-starting {
+  background: #fbbf24;
+}
+
+.hub-terminal-restart {
+  flex-shrink: 0;
+  min-height: 24px;
+  padding: 0 10px;
+  border: 1px solid rgba(122, 162, 247, 0.35);
+  border-radius: 6px;
+  background: rgba(122, 162, 247, 0.12);
+  color: #d7dce5;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.hub-terminal-restart:hover {
+  background: rgba(122, 162, 247, 0.24);
 }
 
 .hub-terminal {
@@ -936,4 +1058,17 @@ input[type='checkbox']:focus-visible {
   font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 13px;
   padding: 10px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text);
+  outline: none;
+  transition:
+    border-color var(--duration-fast) var(--ease-out-expo),
+    box-shadow var(--duration-fast) var(--ease-out-expo);
+}
+
+.hub-terminal-broadcast textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.14);
 }

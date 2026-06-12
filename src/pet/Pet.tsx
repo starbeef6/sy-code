@@ -146,6 +146,8 @@ export default function Pet() {
     if (!launched()) setLaunched(true);
   }
   function quitBrain(): void {
+    // One misclick would otherwise discard the whole conversation.
+    if (!window.confirm('确定结束这个 Codex 会话？对话内容将丢失。')) return;
     // Unmounting AgentTerminal kills the PTY; this is the only real "stop".
     setLaunched(false);
     setCodexSession(null);

@@ -14,6 +14,11 @@ declare global {
   }
 }
 
+/** True when running inside Electron (vs. plain browser preview). */
+export function hasElectronRuntime(): boolean {
+  return typeof window !== 'undefined' && typeof window.electron?.ipcRenderer?.invoke === 'function';
+}
+
 export async function invoke<T>(cmd: IPC, args?: Record<string, unknown>): Promise<T> {
   const safeArgs = args ? (JSON.parse(JSON.stringify(args)) as Record<string, unknown>) : undefined;
   return window.electron.ipcRenderer.invoke(cmd, safeArgs) as Promise<T>;

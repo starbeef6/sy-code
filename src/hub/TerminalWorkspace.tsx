@@ -1,8 +1,8 @@
-import { For, createSignal, onMount } from 'solid-js';
+import { For, Show, createMemo, createSignal, onMount } from 'solid-js';
 import AgentTerminal from './AgentTerminal';
 import type { AutonomyMode } from './types';
 import { IPC } from '../../electron/ipc/channels';
-import { invoke } from '../lib/ipc';
+import { hasElectronRuntime, invoke } from '../lib/ipc';
 
 /** PTY ownership scope for the hub's workspace terminals (reattach + prune). */
 export const HUB_TERMINAL_SCOPE = 'hub-workspace';
@@ -28,30 +28,47 @@ interface TerminalWorkspaceProps {
  * directly clickable/typable for one-on-one interaction.
  */
 export default function TerminalWorkspace(props: TerminalWorkspaceProps) {
-  // configId -> live session id (null until started / after exit).
-  const sessions = new Map<string, string | null>();
+  // configId -> session state: undefined = starting, string = live session id,
+  // null = exited (or failed to start).
+  const [paneSession, setPaneSession] = createSignal<Record<string, string | null | undefined>>({});
+  // configId -> remount epoch; bumping it recreates the pane's AgentTerminal,
+  // which (in reuse mode) replaces a dead session with a fresh spawn.
+  const [paneEpoch, setPaneEpoch] = createSignal<Record<string, number>>({});
   const [broadcastText, setBroadcastText] = createSignal('');
-  const [liveCount, setLiveCount] = createSignal(0);
+
+  const liveCount = createMemo(
+    () => Object.values(paneSession()).filter((value) => typeof value === 'string').length,
+  );
+  const canBroadcast = createMemo(() => liveCount() > 0 && broadcastText().trim().length > 0);
 
   // Terminals are persistent (reuse): leaving this screen detaches them, so on
   // re-entry kill exactly the hub sessions that no longer have a pane — agents
   // the user deselected, or a previous task folder's sessions.
   onMount(() => {
-    if (typeof window.electron?.ipcRenderer?.invoke !== 'function') return;
+    if (!hasElectronRuntime()) return;
     void invoke(IPC.PtyPrune, {
       scope: HUB_TERMINAL_SCOPE,
       keep: props.agents.map((agent) => ({ agentId: agent.agentId, workDir: agent.workDir })),
     });
   });
 
-  function recomputeLive(): void {
-    let n = 0;
-    for (const value of sessions.values()) if (value) n += 1;
-    setLiveCount(n);
+  function setSession(configId: string, sessionId: string | null): void {
+    setPaneSession((current) => ({ ...current, [configId]: sessionId }));
+  }
+
+  function restartPane(configId: string): void {
+    setPaneSession((current) => ({ ...current, [configId]: undefined }));
+    setPaneEpoch((current) => ({ ...current, [configId]: (current[configId] ?? 1) + 1 }));
+  }
+
+  function paneStatus(configId: string): 'live' | 'starting' | 'dead' {
+    const value = paneSession()[configId];
+    if (typeof value === 'string') return 'live';
+    return value === undefined ? 'starting' : 'dead';
   }
 
   function writeAll(data: string): void {
-    for (const sessionId of sessions.values()) {
+    for (const sessionId of Object.values(paneSession())) {
       if (sessionId) void invoke(IPC.PtyInput, { sessionId, data });
     }
   }
@@ -61,6 +78,7 @@ export default function TerminalWorkspace(props: TerminalWorkspaceProps) {
   // chunk as the text is treated as a newline by some TUIs (the "had to press
   // twice" symptom), so we separate them.
   function broadcast(): void {
+    if (!canBroadcast()) return;
     writeAll(broadcastText());
     window.setTimeout(() => writeAll('\r'), 80);
     setBroadcastText('');
@@ -101,22 +119,49 @@ export default function TerminalWorkspace(props: TerminalWorkspaceProps) {
           {(agent) => (
             <div class="hub-terminal-pane">
               <div class="hub-terminal-pane-head">
-                <span class="hub-terminal-pane-name">{agent.name}</span>
-                <code class="hub-terminal-pane-cmd">{agent.command}</code>
+                <div class="hub-terminal-pane-title">
+                  <span
+                    class={`hub-terminal-dot is-${paneStatus(agent.configId)}`}
+                    title={
+                      paneStatus(agent.configId) === 'live'
+                        ? '会话在线'
+                        : paneStatus(agent.configId) === 'starting'
+                          ? '正在启动…'
+                          : '会话已退出'
+                    }
+                  />
+                  <span class="hub-terminal-pane-name">{agent.name}</span>
+                </div>
+                <div class="hub-terminal-pane-tools">
+                  <code class="hub-terminal-pane-cmd">{agent.command}</code>
+                  <Show when={paneStatus(agent.configId) === 'dead'}>
+                    <button
+                      class="hub-terminal-restart"
+                      title="重新启动这个 CLI 会话"
+                      onClick={() => restartPane(agent.configId)}
+                    >
+                      重启
+                    </button>
+                  </Show>
+                </div>
               </div>
-              <AgentTerminal
-                agentId={agent.agentId}
-                command={agent.command}
-                autonomy={props.autonomy}
-                model={props.model}
-                workDir={agent.workDir}
-                reuse
-                scope={HUB_TERMINAL_SCOPE}
-                onSession={(sessionId) => {
-                  sessions.set(agent.configId, sessionId);
-                  recomputeLive();
-                }}
-              />
+              {/* Keyed on the epoch: bumping restartPane() remounts the
+                  terminal, which (in reuse mode) replaces the dead session
+                  with a fresh spawn. */}
+              <Show when={paneEpoch()[agent.configId] ?? 1} keyed>
+                {(_epoch) => (
+                  <AgentTerminal
+                    agentId={agent.agentId}
+                    command={agent.command}
+                    autonomy={props.autonomy}
+                    model={props.model}
+                    workDir={agent.workDir}
+                    reuse
+                    scope={HUB_TERMINAL_SCOPE}
+                    onSession={(sessionId) => setSession(agent.configId, sessionId)}
+                  />
+                )}
+              </Show>
             </div>
           )}
         </For>
@@ -142,7 +187,12 @@ export default function TerminalWorkspace(props: TerminalWorkspaceProps) {
           placeholder="一句话广播给全部会话（Enter 发送 / Shift+Enter 换行）· 可把文件拖进来插入路径"
           rows={4}
         />
-        <button class="hub-primary-button" onClick={() => broadcast()}>
+        <button
+          class="hub-primary-button"
+          disabled={!canBroadcast()}
+          title={liveCount() === 0 ? '没有在线的会话' : undefined}
+          onClick={() => broadcast()}
+        >
           广播发送
         </button>
       </div>

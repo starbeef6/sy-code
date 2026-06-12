@@ -2,9 +2,10 @@ import { onCleanup, onMount } from 'solid-js';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
+import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 import { IPC } from '../../electron/ipc/channels';
-import { invoke, subscribe } from '../lib/ipc';
+import { hasElectronRuntime, invoke, subscribe } from '../lib/ipc';
 import type { AutonomyMode } from './types';
 
 interface PtyOpenResult {
@@ -33,10 +34,6 @@ export interface AgentTerminalProps {
   scope?: string;
   /** Reports the live PTY session id (null once it exits / fails to start). */
   onSession?: (sessionId: string | null) => void;
-}
-
-function hasRuntime(): boolean {
-  return typeof window !== 'undefined' && typeof window.electron?.ipcRenderer?.invoke === 'function';
 }
 
 /**
@@ -73,9 +70,19 @@ export default function AgentTerminal(props: AgentTerminalProps) {
       // Optional addon; ignore if unavailable.
     }
     term.open(container);
+    // GPU renderer: three TUIs repainting at once are noticeably smoother on
+    // WebGL. Falls back to the DOM renderer if the context can't be created
+    // (and permanently if the GPU context is lost).
+    try {
+      const webgl = new WebglAddon();
+      webgl.onContextLoss(() => webgl.dispose());
+      term.loadAddon(webgl);
+    } catch {
+      // DOM renderer fallback.
+    }
     safeFit();
 
-    if (!hasRuntime()) {
+    if (!hasElectronRuntime()) {
       term.writeln('\x1b[33m[未在 Electron 运行时中，终端不可用]\x1b[0m');
       return;
     }

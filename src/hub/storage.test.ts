@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { HUB_STORAGE_KEY } from './defaults';
-import { loadHubPreferences } from './storage';
+import { loadHubPreferences, pushRecentTask } from './storage';
+import type { HubRecentTask } from './types';
 
 class MemoryStorage implements Storage {
   private items = new Map<string, string>();
@@ -186,5 +187,66 @@ describe('loadHubPreferences', () => {
     expect(claude?.command).toBe('claude');
     expect(gemini?.command).toBe('gemini');
     expect(codex?.command).toBe('codex');
+  });
+
+  it('restores saved recent tasks and drops malformed entries', () => {
+    const localStorage = new MemoryStorage();
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      value: localStorage,
+    });
+    localStorage.setItem(
+      HUB_STORAGE_KEY,
+      JSON.stringify({
+        taskRoot: '/tmp/tasks',
+        recentTasks: [
+          { taskFolder: '/tmp/tasks/a', taskName: 'a', lastOpenedAt: 10 },
+          { taskFolder: '', taskName: 'empty-path' },
+          'not-an-object',
+          { taskFolder: '/tmp/tasks/b' },
+        ],
+      }),
+    );
+
+    const preferences = loadHubPreferences('/fallback');
+
+    expect(preferences.recentTasks).toEqual([
+      { taskFolder: '/tmp/tasks/a', taskName: 'a', lastOpenedAt: 10 },
+      { taskFolder: '/tmp/tasks/b', taskName: '/tmp/tasks/b', lastOpenedAt: 0 },
+    ]);
+  });
+
+  it('defaults recent tasks to empty when nothing was saved', () => {
+    const localStorage = new MemoryStorage();
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      value: localStorage,
+    });
+
+    expect(loadHubPreferences('/fallback').recentTasks).toEqual([]);
+  });
+});
+
+describe('pushRecentTask', () => {
+  const entry = (folder: string, at: number): HubRecentTask => ({
+    taskFolder: folder,
+    taskName: folder.split('/').pop() ?? folder,
+    lastOpenedAt: at,
+  });
+
+  it('puts the newest entry first and dedupes by folder', () => {
+    const list = [entry('/t/a', 1), entry('/t/b', 2)];
+    const next = pushRecentTask(list, entry('/t/a', 3));
+
+    expect(next.map((task) => task.taskFolder)).toEqual(['/t/a', '/t/b']);
+    expect(next[0].lastOpenedAt).toBe(3);
+  });
+
+  it('caps the list at 8 entries', () => {
+    let list: HubRecentTask[] = [];
+    for (let i = 0; i < 10; i += 1) list = pushRecentTask(list, entry(`/t/${i}`, i));
+
+    expect(list).toHaveLength(8);
+    expect(list[0].taskFolder).toBe('/t/9');
   });
 });

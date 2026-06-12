@@ -361,9 +361,21 @@ app.on('window-all-closed', () => {
   app.quit();
 });
 
-app.on('before-quit', () => {
-  // Tear every live terminal down up front. A lingering CLI grandchild keeps
-  // node-pty's helper thread — and thus Electron's event loop — alive, which is
-  // what previously left the app unquittable without a manual force-quit.
+// Tear every live terminal down up front. A lingering CLI grandchild keeps
+// node-pty's helper thread — and thus Electron's event loop — alive, which is
+// what previously left the app unquittable without a manual force-quit.
+//
+// The teardown must NOT proceed straight into app exit: node-pty delivers each
+// PTY's exit to JS via a ThreadSafeFunction from a watcher thread, and if Node
+// is already tearing the environment down when that callback lands, pty.node
+// aborts the whole app (SIGABRT via Napi::Error::ThrowAsJavaScriptException).
+// So kill first, give the exit events one short beat to flush while the JS
+// environment is still alive, then resume the actual quit.
+let ptyTeardownDone = false;
+app.on('before-quit', (event) => {
+  if (ptyTeardownDone) return;
+  ptyTeardownDone = true;
+  event.preventDefault();
   ptyManager?.killAll();
+  setTimeout(() => app.quit(), 250);
 });

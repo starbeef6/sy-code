@@ -14,11 +14,19 @@ export interface HubAgentConfig {
   available?: boolean;
 }
 
+/** One entry in the home screen's quick-open list of recent task folders. */
+export interface HubRecentTask {
+  taskFolder: string;
+  taskName: string;
+  lastOpenedAt: number;
+}
+
 export interface HubPreferences {
   taskRoot: string;
   taskRootLocked: boolean;
   agentConfigLocked: boolean;
   aiConfigs: HubAgentConfig[];
+  recentTasks: HubRecentTask[];
 }
 
 export interface HubTaskContext {

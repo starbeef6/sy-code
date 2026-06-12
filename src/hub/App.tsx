@@ -8,16 +8,17 @@ import type {
   RunStartedEvent,
 } from '../../electron/ipc/contracts';
 import type { AgentDef } from '../ipc/types';
-import { invoke, subscribe } from '../lib/ipc';
+import { hasElectronRuntime, invoke, subscribe } from '../lib/ipc';
 import { DEFAULT_AGENT_CONFIGS } from './defaults';
 import { basenameFromPath } from './path';
-import { loadHubPreferences, saveHubPreferences } from './storage';
+import { loadHubPreferences, pushRecentTask, saveHubPreferences } from './storage';
 import type {
   AutonomyMode,
   HubAgentConfig,
   HubAgentRunCard,
   HubAgentRunView,
   HubNotice,
+  HubRecentTask,
   HubScreen,
   HubTaskContext,
   RunStatus,
@@ -93,6 +94,7 @@ export default function HubApp() {
   const [promptText, setPromptText] = createSignal('');
   const [autonomy, setAutonomy] = createSignal<AutonomyMode>('full-auto');
   const [workspaceMode, setWorkspaceMode] = createSignal<WorkspaceMode>('terminal');
+  const [recentTasks, setRecentTasks] = createSignal<HubRecentTask[]>([]);
   const [lastUserText, setLastUserText] = createSignal('');
   const [notice, setNotice] = createSignal<HubNotice | null>(null);
   const [busy, setBusy] = createSignal(false);
@@ -153,10 +155,6 @@ export default function HubApp() {
         ),
     },
   );
-
-  function hasElectronRuntime(): boolean {
-    return typeof window !== 'undefined' && typeof window.electron?.ipcRenderer?.invoke === 'function';
-  }
 
   let noticeTimer: ReturnType<typeof setTimeout> | undefined;
   onCleanup(() => {
@@ -257,19 +255,41 @@ export default function HubApp() {
 
   // ---- task lifecycle ----
 
+  function recordRecentTask(taskFolder: string, taskName: string): void {
+    setRecentTasks((current) =>
+      pushRecentTask(current, { taskFolder, taskName, lastOpenedAt: Date.now() }),
+    );
+  }
+
+  function removeRecentTask(taskFolder: string): void {
+    setRecentTasks((current) => current.filter((task) => task.taskFolder !== taskFolder));
+  }
+
   async function prepareSelectedTask(taskFolder: string): Promise<void> {
     if (!hasElectronRuntime()) {
       showNotice('info', '浏览器预览模式下不可操作本地任务文件夹。');
       return;
     }
     const prepared = await invoke<PreparedTaskFolder>(IPC.HubPrepareTaskFolder, { taskFolder });
+    const taskName = basenameFromPath(prepared.taskFolder);
     setCurrentTask({
       taskFolder: prepared.taskFolder,
       inputDir: prepared.inputDir,
-      taskName: basenameFromPath(prepared.taskFolder),
+      taskName,
     });
+    recordRecentTask(prepared.taskFolder, taskName);
     resetWorkspace();
     setScreen('ai-select');
+  }
+
+  async function openRecentTask(task: HubRecentTask): Promise<void> {
+    try {
+      await prepareSelectedTask(task.taskFolder);
+    } catch (error) {
+      // Folder may have been moved/deleted since it was recorded.
+      removeRecentTask(task.taskFolder);
+      showNotice('error', error instanceof Error ? error.message : String(error));
+    }
   }
 
   async function handleCreateTask(): Promise<void> {
@@ -288,11 +308,13 @@ export default function HubApp() {
         taskRoot: taskRoot(),
         taskName: newTaskName(),
       });
+      const taskName = basenameFromPath(prepared.taskFolder);
       setCurrentTask({
         taskFolder: prepared.taskFolder,
         inputDir: prepared.inputDir,
-        taskName: basenameFromPath(prepared.taskFolder),
+        taskName,
       });
+      recordRecentTask(prepared.taskFolder, taskName);
       resetWorkspace();
       setNewTaskName('');
       setScreen('ai-select');
@@ -601,6 +623,13 @@ export default function HubApp() {
     }
   });
 
+  // Window title follows the task so Mission Control / the Dock menu show
+  // which task this window is on.
+  createEffect(() => {
+    const task = currentTask();
+    document.title = task ? `${task.taskName} · AI Terminal Hub` : 'AI Terminal Hub';
+  });
+
   onMount(async () => {
     if (!hasElectronRuntime()) {
       const preferences = loadHubPreferences('~/AI-Terminal-Hub/tasks');
@@ -609,6 +638,7 @@ export default function HubApp() {
       setAgentConfigLocked(preferences.agentConfigLocked);
       setAiConfigs(preferences.aiConfigs);
       setAgentSelection(selectionFromConfigs(preferences.aiConfigs));
+      setRecentTasks(preferences.recentTasks);
       showNotice('info', '当前为浏览器预览模式。实际派发、文件拖入和目录操作需要在 Electron 中运行。');
       return;
     }
@@ -631,6 +661,7 @@ export default function HubApp() {
       setAiConfigs(mergedConfigs);
       setAgentSelection(selectionFromConfigs(mergedConfigs));
       setAgentAvailability(availability);
+      setRecentTasks(preferences.recentTasks);
     } catch (error) {
       showNotice('error', error instanceof Error ? error.message : String(error));
     }
@@ -651,6 +682,7 @@ export default function HubApp() {
         defaultChecked: config.defaultChecked,
         isCustom: config.isCustom,
       })),
+      recentTasks: recentTasks(),
     });
   });
 
@@ -772,6 +804,37 @@ export default function HubApp() {
               </button>
             </article>
           </div>
+
+          <Show when={recentTasks().length > 0}>
+            <div class="hub-recent">
+              <p class="hub-section-label">最近任务</p>
+              <div class="hub-recent-list">
+                <For each={recentTasks()}>
+                  {(task) => (
+                    <div class="hub-recent-item">
+                      <button
+                        class="hub-recent-open"
+                        title={task.taskFolder}
+                        onClick={() => void openRecentTask(task)}
+                      >
+                        <strong>{task.taskName}</strong>
+                        <span>{task.taskFolder}</span>
+                      </button>
+                      <button
+                        class="hub-recent-remove"
+                        type="button"
+                        aria-label={`从最近任务移除 ${task.taskName}`}
+                        title="从列表移除（不删除文件夹）"
+                        onClick={() => removeRecentTask(task.taskFolder)}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  )}
+                </For>
+              </div>
+            </div>
+          </Show>
         </section>
       </Show>
 
@@ -887,7 +950,12 @@ export default function HubApp() {
               </button>
               <div class="hub-select-summary">
                 <span>当前勾选 {selectedAgents().length} 个 AI</span>
-                <button class="hub-primary-button" onClick={startWorkspace}>
+                <button
+                  class="hub-primary-button"
+                  disabled={selectedAgents().length === 0}
+                  title={selectedAgents().length === 0 ? '至少勾选一个 AI' : undefined}
+                  onClick={startWorkspace}
+                >
                   进入工作区
                 </button>
               </div>
