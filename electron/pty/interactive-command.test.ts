@@ -21,11 +21,11 @@ describe('buildInteractiveCommand', () => {
     ).toEqual(['--dangerously-skip-permissions', '--model', 'opus']);
   });
 
-  it('gemini: yolo for full-auto, -m for model', () => {
+  it('gemini→agy: skip-permissions for full-auto, --model for model', () => {
     expect(
       buildInteractiveCommand({ agentId: 'gemini', autonomy: 'full-auto', model: 'pro', ...base })
         .args,
-    ).toEqual(['--approval-mode', 'yolo', '-m', 'pro']);
+    ).toEqual(['--dangerously-skip-permissions', '--model', 'pro']);
   });
 
   it('codex: workspace-write for auto-edit, bypass for full-auto', () => {

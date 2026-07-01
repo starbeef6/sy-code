@@ -174,6 +174,108 @@ a,
   word-break: break-all;
 }
 
+/* Settings entry: a quiet gear sitting to the left of the brand kicker. */
+.hub-topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.hub-settings-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text-muted);
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.hub-settings-button:hover {
+  background: var(--panel-soft);
+  color: var(--text);
+}
+
+/* Centered modal used by the Settings panel. */
+.hub-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.32);
+}
+
+.hub-modal {
+  width: 100%;
+  max-width: 520px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px;
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.hub-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.hub-modal-header h3 {
+  margin: 0;
+  font-family: var(--font-display);
+}
+
+.hub-modal-close {
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+
+.hub-modal-close:hover {
+  background: var(--panel-soft);
+  color: var(--text);
+}
+
+.hub-settings-textarea {
+  width: 100%;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text);
+  padding: 8px 10px;
+  outline: none;
+  resize: vertical;
+  font: inherit;
+  transition:
+    border-color var(--duration-fast) var(--ease-out-expo),
+    box-shadow var(--duration-fast) var(--ease-out-expo);
+}
+
+.hub-settings-textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.14);
+}
+
+.hub-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 .hub-task-chip,
 .hub-notice,
 .hub-card,
@@ -529,6 +631,33 @@ input[type='checkbox']:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+/* Every agent card carries the same lightweight delete affordance, pinned to
+   the bottom so cards of differing heights stay aligned. Deliberately muted —
+   no danger-red fill — since deleting/replacing any agent is routine. */
+.hub-agent-card-footer {
+  margin-top: auto;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.hub-agent-delete {
+  min-height: 28px;
+  padding: 0 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.hub-agent-delete:hover:not(:disabled) {
+  color: var(--danger);
+}
+
+.hub-agent-delete:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .hub-agent-card-header,

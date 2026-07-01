@@ -2,16 +2,18 @@ import { For, Show, createEffect, createSignal, onCleanup, onMount } from 'solid
 import { IPC } from '../../electron/ipc/channels';
 import { invoke } from '../lib/ipc';
 import AgentTerminal from '../hub/AgentTerminal';
+import { quoteDroppedPath } from '../hub/path';
 import './pet.css';
 
 const IMAGE_EXT = ['.gif', '.png', '.jpg', '.jpeg', '.webp', '.apng'];
 
 const DEFAULT_SYS =
-  '你是我的"总指挥大脑"。我在用一个叫 AI Terminal Hub 的工具，同时控制三个 AI 终端' +
-  '（Claude Code、Gemini CLI、Codex CLI），把同一个任务派给它们、对比结果。你是一个独立、' +
-  '不受文件夹限制的 Codex 会话。我会把"现场"（三个终端最近的输出、我发过的指令、相关文件路径）' +
-  '投喂给你。你的任务：理解现场，把我的大白话需求加工成一条精炼、明确、可直接粘贴给那三个终端' +
-  '执行的中文指令；必要时先读文件或验证。回答简洁。';
+  '你是我的"总指挥大脑"。我在用一个叫 AI Terminal Hub 的工具，同时控制若干个 AI 终端' +
+  '（数量不固定，可能 3、4、5 个或更多），把同一个任务派给它们、对比结果。' +
+  '你就运行在本次任务的目录里——这个目录下的每个子目录各是一个 AI 终端的工作区' +
+  '（例如 claude-code/、gemini-cli/、codex-cli/ 等，具体以实际为准，可自己 ls 查看）。' +
+  '你的活：理解终端现场，把我的大白话需求加工成一条精炼、明确、可直接粘贴给各个终端执行的中文指令。' +
+  '要找文件就在本目录及其子目录里看，不要去本目录以外乱翻（比如主目录、系统目录）。回答简洁。';
 
 function loadGifs(): string[] {
   try {
@@ -24,6 +26,19 @@ function loadGifs(): string[] {
 function loadInterval(): number {
   const n = Number(localStorage.getItem('pet.intervalSec'));
   return Number.isFinite(n) && n >= 1 ? n : 8;
+}
+/**
+ * The brain persona is persisted, so a previously-saved value would otherwise
+ * mask any change to DEFAULT_SYS forever. Migrate the superseded built-in
+ * persona — recognizable by "不受文件夹限制", which told the brain it lived
+ * nowhere and hardcoded "三个" terminals — to the current default. A genuine
+ * user customization won't contain that stale phrase, so it's left untouched.
+ */
+function loadSysPrompt(): string {
+  const stored = localStorage.getItem('pet.sysPrompt');
+  if (stored === null || stored.trim() === '') return DEFAULT_SYS;
+  if (stored.includes('不受文件夹限制')) return DEFAULT_SYS;
+  return stored;
 }
 function isImagePath(p: string): boolean {
   const lower = p.toLowerCase();
@@ -54,9 +69,13 @@ export default function Pet() {
   // Brain (live Codex) state
   const [launched, setLaunched] = createSignal(false);
   const [codexSession, setCodexSession] = createSignal<string | null>(null);
-  const [sysPrompt, setSysPrompt] = createSignal(localStorage.getItem('pet.sysPrompt') ?? DEFAULT_SYS);
+  const [sysPrompt, setSysPrompt] = createSignal(loadSysPrompt());
   const [showSys, setShowSys] = createSignal(false);
   const [homeDir, setHomeDir] = createSignal('');
+  // The active task folder the brain runs inside + its agent sub-folders, both
+  // fetched on launch and fed to the brain up front so it never has to search.
+  const [taskFolder, setTaskFolder] = createSignal('');
+  const [agentDirs, setAgentDirs] = createSignal<string[]>([]);
   const [chatInput, setChatInput] = createSignal('');
   const [includeHistory, setIncludeHistory] = createSignal(true);
   const [includeTerminals, setIncludeTerminals] = createSignal(true);
@@ -142,8 +161,19 @@ export default function Pet() {
     writeToCodex(text);
     window.setTimeout(() => writeToCodex('\r'), 60);
   }
-  function launch(): void {
-    if (!launched()) setLaunched(true);
+  async function launch(): Promise<void> {
+    if (launched()) return;
+    // Run the brain INSIDE the active task folder so it can just look around
+    // its own cwd (no scanning ~ / hitting privacy prompts). Fetch it first so
+    // the terminal mounts with the right workDir.
+    try {
+      const r = await invoke<{ taskFolder?: string; agentDirs?: string[] }>(IPC.BrainTaskFolder);
+      if (r?.taskFolder) setTaskFolder(r.taskFolder);
+      if (Array.isArray(r?.agentDirs)) setAgentDirs(r.agentDirs);
+    } catch {
+      // Fall back to homeDir below if the lookup fails.
+    }
+    setLaunched(true);
   }
   function quitBrain(): void {
     // One misclick would otherwise discard the whole conversation.
@@ -153,13 +183,33 @@ export default function Pet() {
     setCodexSession(null);
     setStatus('已退出 Codex 会话');
   }
+  /** A single-line "here's exactly where you are" briefing, built from the real
+   *  paths so the brain never has to scan to find the agents' output. */
+  function locationBriefing(): string {
+    const root = taskFolder();
+    if (!root) return '';
+    const dirs = agentDirs();
+    const list =
+      dirs.length > 0
+        ? dirs.map((name) => `${root}/${name}`).join('、')
+        : '（本目录下的各子目录，每个对应一个 AI）';
+    return (
+      `【你的位置】你就运行在本次任务目录：${root}。` +
+      `各 AI 终端的工作区子目录是：${list}。` +
+      `每个 AI 生成的文件就在它自己的子目录里——要找文件直接进这些目录看，不要去别处搜索。`
+    );
+  }
   function onCodexSession(id: string | null): void {
     setCodexSession(id);
-    if (id && sysPrompt().trim()) {
-      // Let codex's TUI finish drawing, then prime it with the architecture.
-      window.setTimeout(() => sendLine(sysPrompt().trim()), 2600);
-      setStatus('已启动，正在告知架构…');
-    }
+    if (!id) return;
+    // Let codex's TUI finish drawing, then prime it: first the persona, then a
+    // concrete location briefing (real paths) so it knows exactly where the
+    // agents' files are and never has to scan the disk.
+    const persona = sysPrompt().trim();
+    if (persona) window.setTimeout(() => sendLine(persona), 2600);
+    const briefing = locationBriefing();
+    if (briefing) window.setTimeout(() => sendLine(briefing), 2900);
+    if (persona || briefing) setStatus('已启动，正在告知架构与目录…');
   }
   function sendChat(): void {
     const text = chatInput().trim();
@@ -178,7 +228,8 @@ export default function Pet() {
         includeHistory: includeHistory(),
         includeTerminals: includeTerminals(),
       });
-      sendLine(`【现场情况，供你参考】\n${r.contextText || '(空)'}`);
+      const folderLine = taskFolder() ? `任务目录：${taskFolder()}\n` : '';
+      sendLine(`【现场情况，供你参考】\n${folderLine}${r.contextText || '(空)'}`);
       setStatus(`已投喂：${r.summary}`);
     } catch (error) {
       setStatus('投喂失败：' + String(error));
@@ -190,7 +241,7 @@ export default function Pet() {
       return;
     }
     sendLine(
-      '请结合我上面说的需求和现场，把它加工成一条精炼、明确、可直接粘贴给三个 AI 终端执行的中文指令，只输出这条指令。',
+      '请结合我上面说的需求和现场，把它加工成一条精炼、明确、可直接粘贴给各个 AI 终端执行的中文指令，只输出这条指令。',
     );
   }
 
@@ -291,7 +342,7 @@ export default function Pet() {
             fallback={
               <div class="pet-launch">
                 <p>启动一个独立、无限制的 Codex 会话——就像在终端里敲 codex 一样。</p>
-                <button class="pet-primary" onClick={launch}>
+                <button class="pet-primary" onClick={() => void launch()}>
                   启动 Codex
                 </button>
               </div>
@@ -302,7 +353,7 @@ export default function Pet() {
                 agentId="codex"
                 command="codex"
                 autonomy="full-auto"
-                workDir={homeDir() || '.'}
+                workDir={taskFolder() || homeDir() || '.'}
                 onSession={onCodexSession}
               />
             </div>
@@ -318,7 +369,7 @@ export default function Pet() {
                 if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
                   e.preventDefault();
                   if (launched()) sendChat();
-                  else launch();
+                  else void launch();
                 }
               }}
               onDragOver={(e) => {
@@ -327,13 +378,13 @@ export default function Pet() {
               }}
               onDrop={(e) => {
                 e.preventDefault();
-                const paths = pathsFromDrop(e).map((p) => (p.includes(' ') ? `'${p}'` : p));
+                const paths = pathsFromDrop(e).map(quoteDroppedPath);
                 if (paths.length) setChatInput((prev) => (prev ? `${prev} ` : '') + paths.join(' '));
               }}
               placeholder={launched() ? '跟它聊 / 说需求（Enter 发送，可拖文件→路径）' : '点启动后在这里跟它聊'}
               rows={2}
             />
-            <button class="pet-primary" onClick={() => (launched() ? sendChat() : launch())}>
+            <button class="pet-primary" onClick={() => (launched() ? sendChat() : void launch())}>
               {launched() ? '发送' : '启动'}
             </button>
           </div>
@@ -353,7 +404,7 @@ export default function Pet() {
                 checked={includeTerminals()}
                 onChange={(e) => setIncludeTerminals(e.currentTarget.checked)}
               />
-              三个终端现场
+              终端现场
             </label>
             <button class="pet-mini" disabled={!codexSession()} onClick={() => void feed()}>
               投喂

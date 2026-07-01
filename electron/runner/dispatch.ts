@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import type { DispatchRequest, DispatchResponse, RunRecord } from '../ipc/contracts.js';
 import { resolveAdapter } from '../agents/registry.js';
 import { ensureAgentWorkDir } from '../task/task-folder.js';
+import { ensureAgentInstructions } from '../task/agent-instructions.js';
 import { buildWrappedPrompt } from '../task/prompt.js';
 import type { RunStore } from '../persistence/run-store.js';
 import type { RunManager } from './run-manager.js';
@@ -41,6 +42,7 @@ export function dispatchRuns(request: DispatchRequest, deps: DispatchDeps): Disp
       const ensured = ensureAgentWorkDir(request.taskFolder, agent.folderName);
       workDir = ensured.workDir;
       folderName = ensured.folderName;
+      ensureAgentInstructions(workDir, agent.agentId);
 
       const logPaths = deps.runStore.prepareRunDir(workDir, runId);
       const prompt = buildWrappedPrompt({

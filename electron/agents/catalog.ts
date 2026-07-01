@@ -21,10 +21,13 @@ export const AGENT_CATALOG: AgentCatalogEntry[] = [
     bareName: 'claude',
   },
   {
+    // The "gemini" slot now runs Antigravity (`agy`); Google retired the
+    // standalone Gemini CLI's personal login. Keep the id 'gemini' so existing
+    // configs, routing and the GEMINI.md instruction file keep working.
     id: 'gemini',
-    name: 'Gemini CLI',
-    preferredBinary: '/opt/homebrew/bin/gemini',
-    bareName: 'gemini',
+    name: 'Antigravity',
+    preferredBinary: '/opt/homebrew/bin/agy',
+    bareName: 'agy',
   },
   {
     id: 'codex',

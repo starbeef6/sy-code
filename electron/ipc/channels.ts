@@ -37,6 +37,9 @@ export enum IPC {
   // Brain / pet coordinator (Codex-powered, independent of the terminals)
   BrainGather = 'brain_gather',
   BrainOptimize = 'brain_optimize',
+  // The task folder the hub's terminals currently belong to, so the brain can
+  // launch INSIDE it instead of the home directory.
+  BrainTaskFolder = 'brain_task_folder',
 
   // Pet companion window
   PetSetSize = 'pet_set_size',

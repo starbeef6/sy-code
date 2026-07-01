@@ -44,29 +44,22 @@ describe('claude adapter', () => {
   });
 });
 
-describe('gemini adapter', () => {
-  const adapter = createGeminiAdapter('/bin/gemini');
+describe('gemini→antigravity (agy) adapter', () => {
+  const adapter = createGeminiAdapter('/bin/agy');
 
-  it('passes the prompt as the -p value and skips trust', () => {
+  it('passes the prompt via -p and adds the access root with --add-dir', () => {
     const inv = adapter.buildInvocation({ ...base, workDir: '/task/gemini-cli' });
-    expect(inv.command).toBe('/bin/gemini');
-    expect(inv.args).toEqual([
-      '-p',
-      '整理数据',
-      '-o',
-      'text',
-      '--skip-trust',
-      '--approval-mode',
-      'default',
-      '--include-directories',
-      '/task',
-    ]);
+    expect(inv.command).toBe('/bin/agy');
+    // "safe" autonomy → no auto-approve flag (agy prompts by default).
+    expect(inv.args).toEqual(['-p', '整理数据', '--add-dir', '/task']);
     expect(inv.stdin).toBeUndefined();
     expect(inv.cwd).toBe('/task/gemini-cli');
   });
 
-  it('maps full-auto to yolo', () => {
-    expect(adapter.buildInvocation({ ...base, autonomy: 'full-auto' }).args).toContain('yolo');
+  it('maps full-auto to --dangerously-skip-permissions', () => {
+    expect(adapter.buildInvocation({ ...base, autonomy: 'full-auto' }).args).toContain(
+      '--dangerously-skip-permissions',
+    );
   });
 });
 

@@ -1,30 +1,31 @@
 import type { AgentAdapter, InvocationInput, Invocation } from './types.js';
 
 /**
- * Gemini CLI non-interactive adapter (`gemini -p`).
+ * Antigravity (`agy`) non-interactive adapter — the Gemini slot now runs
+ * Antigravity, since Google retired the standalone Gemini CLI's personal login.
  *
- * - Prompt is passed as the value of `-p` (Gemini's documented headless input).
- * - `--skip-trust` replaces the old fragile "detect trust prompt and stuff 1\r".
- * - Verified against Gemini CLI 0.45.2 (see 架构.md appendix A).
+ * agy's flags differ from gemini's: print mode is `-p` (plain text by default,
+ * so no `-o text`); there is no `--skip-trust`/`--approval-mode` (it errors on
+ * those) — auto-approve is `--dangerously-skip-permissions`; workspace dirs use
+ * `--add-dir` (not `--include-directories`); resume is `--conversation <id>`;
+ * model is `--model`.
  */
 export function createGeminiAdapter(binary: string): AgentAdapter {
   return {
     id: 'gemini',
-    displayName: 'Gemini CLI',
+    displayName: 'Antigravity',
     buildInvocation(input: InvocationInput): Invocation {
-      const args = ['-p', input.prompt, '-o', 'text', '--skip-trust'];
+      const args = ['-p', input.prompt];
 
-      if (input.autonomy === 'auto-edit') {
-        args.push('--approval-mode', 'auto_edit');
-      } else if (input.autonomy === 'full-auto') {
-        args.push('--approval-mode', 'yolo');
-      } else {
-        args.push('--approval-mode', 'default');
+      // agy has no granular "auto-edit" tier: anything above "safe" maps to
+      // its single auto-approve flag.
+      if (input.autonomy === 'full-auto' || input.autonomy === 'auto-edit') {
+        args.push('--dangerously-skip-permissions');
       }
 
-      if (input.model) args.push('-m', input.model);
-      if (input.accessRoot) args.push('--include-directories', input.accessRoot);
-      if (input.resumeSessionId) args.push('--resume', input.resumeSessionId);
+      if (input.model) args.push('--model', input.model);
+      if (input.accessRoot) args.push('--add-dir', input.accessRoot);
+      if (input.resumeSessionId) args.push('--conversation', input.resumeSessionId);
 
       return {
         command: binary,

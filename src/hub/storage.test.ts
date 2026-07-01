@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { HUB_STORAGE_KEY } from './defaults';
+import { DEFAULT_BROADCAST_SUFFIX, HUB_STORAGE_KEY } from './defaults';
 import { loadHubPreferences, pushRecentTask } from './storage';
 import type { HubRecentTask } from './types';
 
@@ -137,7 +137,9 @@ describe('loadHubPreferences', () => {
     const gemini = preferences.aiConfigs.find((agent) => agent.id === 'gemini');
     const codex = preferences.aiConfigs.find((agent) => agent.id === 'codex');
 
-    expect(gemini?.command).toBe('gemini');
+    // The gemini slot now defaults to Antigravity (agy), so a saved bare
+    // 'gemini' migrates to it.
+    expect(gemini?.command).toBe('agy');
     expect(codex?.command).toBe('codex');
   });
 
@@ -185,7 +187,8 @@ describe('loadHubPreferences', () => {
     const codex = preferences.aiConfigs.find((agent) => agent.id === 'codex');
 
     expect(claude?.command).toBe('claude');
-    expect(gemini?.command).toBe('gemini');
+    // The old gemini-shell-wrapper command migrates to the new default, agy.
+    expect(gemini?.command).toBe('agy');
     expect(codex?.command).toBe('codex');
   });
 
@@ -224,6 +227,25 @@ describe('loadHubPreferences', () => {
     });
 
     expect(loadHubPreferences('/fallback').recentTasks).toEqual([]);
+  });
+
+  it('defaults the broadcast suffix when unset, but honors an explicit empty string', () => {
+    const localStorage = new MemoryStorage();
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      value: localStorage,
+    });
+
+    // Nothing saved at all → default suffix.
+    expect(loadHubPreferences('/fallback').broadcastSuffix).toBe(DEFAULT_BROADCAST_SUFFIX);
+
+    // Saved with an explicit empty string → keep it empty (user cleared it).
+    localStorage.setItem(HUB_STORAGE_KEY, JSON.stringify({ taskRoot: '/tmp/tasks', broadcastSuffix: '' }));
+    expect(loadHubPreferences('/fallback').broadcastSuffix).toBe('');
+
+    // Saved with custom text → keep it.
+    localStorage.setItem(HUB_STORAGE_KEY, JSON.stringify({ taskRoot: '/tmp/tasks', broadcastSuffix: '自定义' }));
+    expect(loadHubPreferences('/fallback').broadcastSuffix).toBe('自定义');
   });
 });
 

@@ -10,7 +10,6 @@ export interface HubAgentConfig {
   command: string;
   folderName: string;
   defaultChecked: boolean;
-  isCustom?: boolean;
   available?: boolean;
 }
 
@@ -27,6 +26,12 @@ export interface HubPreferences {
   agentConfigLocked: boolean;
   aiConfigs: HubAgentConfig[];
   recentTasks: HubRecentTask[];
+  /**
+   * Text appended to a broadcast message ONLY when the user clicks the
+   * 广播发送 button (plain Enter sends raw, without it). Editable in Settings;
+   * empty means nothing is appended.
+   */
+  broadcastSuffix: string;
 }
 
 export interface HubTaskContext {

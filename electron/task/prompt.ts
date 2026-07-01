@@ -21,6 +21,12 @@ export function buildWrappedPrompt(input: WrappedPromptInput): string {
     );
   }
 
-  lines.push('', `输出目录：${input.workDir}`, '请把生成文件保存在这个输出目录中。');
+  lines.push(
+    '',
+    '---',
+    `【输出目录】${input.workDir}`,
+    '所有生成的文件必须保存在上述输出目录（或其子目录）中。',
+    '即使附件位于其他目录（例如桌面），也不要把生成的文件写到附件所在目录、桌面或主目录。',
+  );
   return lines.join('\n');
 }

@@ -1,4 +1,4 @@
-import { DEFAULT_AGENT_CONFIGS, HUB_STORAGE_KEY } from './defaults';
+import { DEFAULT_AGENT_CONFIGS, DEFAULT_BROADCAST_SUFFIX, HUB_STORAGE_KEY } from './defaults';
 import type { HubAgentConfig, HubPreferences, HubRecentTask } from './types';
 
 const RECENT_TASKS_CAP = 8;
@@ -24,7 +24,6 @@ function normalizeAgentConfig(raw: unknown): HubAgentConfig | null {
     command: raw.command,
     folderName: raw.folderName,
     defaultChecked: raw.defaultChecked === true,
-    isCustom: raw.isCustom === true,
     available: typeof raw.available === 'boolean' ? raw.available : undefined,
   };
 }
@@ -81,22 +80,19 @@ export function pushRecentTask(list: HubRecentTask[], entry: HubRecentTask): Hub
 }
 
 function mergeAgentConfigs(stored: HubAgentConfig[] | null): HubAgentConfig[] {
-  const byId = new Map((stored ?? []).map((agent) => [agent.id, agent]));
-  const defaults = DEFAULT_AGENT_CONFIGS.map((agent) => {
-    const saved = byId.get(agent.id);
-    return saved
-      ? {
-          ...agent,
-          name: saved.name,
-          command: normalizeKnownCommand(agent.id, saved.command, agent.command),
-          folderName: saved.folderName,
-          defaultChecked: saved.defaultChecked,
-        }
-      : agent;
-  });
+  // First run / nothing persisted yet: seed the three built-in defaults.
+  if (!stored || stored.length === 0) return DEFAULT_AGENT_CONFIGS;
 
-  const custom = (stored ?? []).filter((agent) => agent.isCustom);
-  return [...defaults, ...custom];
+  // Otherwise the user's curated list is authoritative — every agent (built-ins
+  // included) can be renamed, re-commanded, added, or deleted, and the change
+  // sticks across restarts. We only scrub legacy/stale command strings for the
+  // known built-in ids on the way in (migration cleanup); custom ids pass through.
+  const defaultCommandById = new Map(DEFAULT_AGENT_CONFIGS.map((agent) => [agent.id, agent.command]));
+  return stored.map((agent) => {
+    const defaultCommand = defaultCommandById.get(agent.id);
+    if (defaultCommand === undefined) return agent;
+    return { ...agent, command: normalizeKnownCommand(agent.id, agent.command, defaultCommand) };
+  });
 }
 
 function fallbackPreferences(defaultTaskRoot: string): HubPreferences {
@@ -106,6 +102,7 @@ function fallbackPreferences(defaultTaskRoot: string): HubPreferences {
     agentConfigLocked: true,
     aiConfigs: DEFAULT_AGENT_CONFIGS,
     recentTasks: [],
+    broadcastSuffix: DEFAULT_BROADCAST_SUFFIX,
   };
 }
 
@@ -133,6 +130,10 @@ export function loadHubPreferences(defaultTaskRoot: string): HubPreferences {
       agentConfigLocked: parsed.agentConfigLocked !== false,
       aiConfigs: mergeAgentConfigs(storedAgents),
       recentTasks,
+      // An explicit empty string (user cleared it) is honored; only a missing
+      // value falls back to the default.
+      broadcastSuffix:
+        typeof parsed.broadcastSuffix === 'string' ? parsed.broadcastSuffix : DEFAULT_BROADCAST_SUFFIX,
     };
   } catch {
     return fallbackPreferences(defaultTaskRoot);

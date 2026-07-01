@@ -3,6 +3,7 @@ import AgentTerminal from './AgentTerminal';
 import type { AutonomyMode } from './types';
 import { IPC } from '../../electron/ipc/channels';
 import { hasElectronRuntime, invoke } from '../lib/ipc';
+import { quoteDroppedPath } from './path';
 
 /** PTY ownership scope for the hub's workspace terminals (reattach + prune). */
 export const HUB_TERMINAL_SCOPE = 'hub-workspace';
@@ -19,6 +20,8 @@ interface TerminalWorkspaceProps {
   agents: TerminalAgent[];
   autonomy: AutonomyMode;
   model?: string;
+  /** Appended (single-line) to a broadcast sent via the button — not via Enter. */
+  broadcastSuffix?: string;
   onReturnToAiConfig: () => void;
 }
 
@@ -73,15 +76,36 @@ export default function TerminalWorkspace(props: TerminalWorkspaceProps) {
     }
   }
 
-  // One click = type the line into every session, then send a *discrete* Enter
-  // shortly after so each CLI's TUI actually submits it. A "\r" sent in the same
-  // chunk as the text is treated as a newline by some TUIs (the "had to press
-  // twice" symptom), so we separate them.
+  // Type the line into every session, then send a *discrete* Enter shortly after
+  // so each CLI's TUI actually submits it. A "\r" sent in the same chunk as the
+  // text is treated as a newline by some TUIs (the "had to press twice"
+  // symptom), so we separate them.
+  function sendToAll(text: string): void {
+    writeAll(text);
+    // First Enter submits for Claude/Codex. Gemini sometimes treats the first
+    // \r as committing the just-written text rather than sending it, so it sits
+    // there until you press Enter again — we send a second \r a beat later to
+    // actually run it. By then the others' input boxes are empty, so the extra
+    // \r is a harmless no-op. Safe because broadcasts are seconds/minutes apart.
+    window.setTimeout(() => writeAll('\r'), 80);
+    window.setTimeout(() => writeAll('\r'), 400);
+    setBroadcastText('');
+  }
+
+  // Plain Enter: send exactly what the user typed, untouched.
   function broadcast(): void {
     if (!canBroadcast()) return;
-    writeAll(broadcastText());
-    window.setTimeout(() => writeAll('\r'), 80);
-    setBroadcastText('');
+    sendToAll(broadcastText());
+  }
+
+  // 广播发送 button: append the user-defined suffix (collapsed to a single line so
+  // an embedded newline can't trip the TUI into submitting early) before sending.
+  // An empty suffix makes this identical to a plain Enter.
+  function broadcastWithSuffix(): void {
+    if (!canBroadcast()) return;
+    const suffix = (props.broadcastSuffix ?? '').replace(/\s*\n\s*/g, ' ').trim();
+    const text = broadcastText();
+    sendToAll(suffix ? `${text} ${suffix}` : text);
   }
 
   function handleDrop(event: DragEvent): void {
@@ -91,7 +115,7 @@ export default function TerminalWorkspace(props: TerminalWorkspaceProps) {
     const paths: string[] = [];
     for (let i = 0; i < files.length; i += 1) {
       const filePath = window.electron?.getPathForFile?.(files[i]) ?? '';
-      if (filePath) paths.push(filePath.includes(' ') ? `'${filePath}'` : filePath);
+      if (filePath) paths.push(quoteDroppedPath(filePath));
     }
     if (paths.length === 0) return;
     setBroadcastText((prev) => (prev ? `${prev} ` : '') + paths.join(' '));
@@ -184,14 +208,14 @@ export default function TerminalWorkspace(props: TerminalWorkspaceProps) {
               broadcast();
             }
           }}
-          placeholder="一句话广播给全部会话（Enter 发送 / Shift+Enter 换行）· 可把文件拖进来插入路径"
+          placeholder="一句话广播给全部会话（Enter 原样发送 / 点按钮附加提示词 / Shift+Enter 换行）· 可把文件拖进来插入路径"
           rows={4}
         />
         <button
           class="hub-primary-button"
           disabled={!canBroadcast()}
-          title={liveCount() === 0 ? '没有在线的会话' : undefined}
-          onClick={() => broadcast()}
+          title={liveCount() === 0 ? '没有在线的会话' : '发送并附加设置里的提示词（回车则原样发送）'}
+          onClick={() => broadcastWithSuffix()}
         >
           广播发送
         </button>

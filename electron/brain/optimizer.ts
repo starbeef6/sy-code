@@ -84,7 +84,7 @@ export async function gatherContext(
       );
     }
     if (termParts.length > 0) {
-      parts.push('【三个终端的现场】\n' + termParts.join('\n\n'));
+      parts.push('【终端现场】\n' + termParts.join('\n\n'));
       summaryBits.push(`${sessions.length} 终端`);
     }
   }

@@ -9,7 +9,7 @@ import type {
 } from '../../electron/ipc/contracts';
 import type { AgentDef } from '../ipc/types';
 import { hasElectronRuntime, invoke, subscribe } from '../lib/ipc';
-import { DEFAULT_AGENT_CONFIGS } from './defaults';
+import { DEFAULT_AGENT_CONFIGS, DEFAULT_BROADCAST_SUFFIX } from './defaults';
 import { basenameFromPath } from './path';
 import { loadHubPreferences, pushRecentTask, saveHubPreferences } from './storage';
 import type {
@@ -95,6 +95,8 @@ export default function HubApp() {
   const [autonomy, setAutonomy] = createSignal<AutonomyMode>('full-auto');
   const [workspaceMode, setWorkspaceMode] = createSignal<WorkspaceMode>('terminal');
   const [recentTasks, setRecentTasks] = createSignal<HubRecentTask[]>([]);
+  const [broadcastSuffix, setBroadcastSuffix] = createSignal(DEFAULT_BROADCAST_SUFFIX);
+  const [showSettings, setShowSettings] = createSignal(false);
   const [lastUserText, setLastUserText] = createSignal('');
   const [notice, setNotice] = createSignal<HubNotice | null>(null);
   const [busy, setBusy] = createSignal(false);
@@ -182,21 +184,20 @@ export default function HubApp() {
     );
   }
 
-  function addCustomAgent(): void {
-    const customId = `custom-${crypto.randomUUID()}`;
+  function addAgent(): void {
+    const newId = `custom-${crypto.randomUUID()}`;
     const next: HubAgentConfig = {
-      id: customId,
-      name: 'Custom AI',
+      id: newId,
+      name: '新 AI',
       command: '',
-      folderName: 'custom-ai',
+      folderName: 'new-ai',
       defaultChecked: false,
-      isCustom: true,
     };
     setAiConfigs((current) => [...current, next]);
-    setAgentSelection((current) => ({ ...current, [customId]: next.defaultChecked }));
+    setAgentSelection((current) => ({ ...current, [newId]: next.defaultChecked }));
   }
 
-  function removeCustomAgent(configId: string): void {
+  function removeAgent(configId: string): void {
     setAiConfigs((current) => current.filter((config) => config.id !== configId));
     setAgentSelection((current) => {
       const next = { ...current };
@@ -639,6 +640,7 @@ export default function HubApp() {
       setAiConfigs(preferences.aiConfigs);
       setAgentSelection(selectionFromConfigs(preferences.aiConfigs));
       setRecentTasks(preferences.recentTasks);
+      setBroadcastSuffix(preferences.broadcastSuffix);
       showNotice('info', '当前为浏览器预览模式。实际派发、文件拖入和目录操作需要在 Electron 中运行。');
       return;
     }
@@ -662,6 +664,7 @@ export default function HubApp() {
       setAgentSelection(selectionFromConfigs(mergedConfigs));
       setAgentAvailability(availability);
       setRecentTasks(preferences.recentTasks);
+      setBroadcastSuffix(preferences.broadcastSuffix);
     } catch (error) {
       showNotice('error', error instanceof Error ? error.message : String(error));
     }
@@ -680,16 +683,25 @@ export default function HubApp() {
         command: config.command,
         folderName: config.folderName,
         defaultChecked: config.defaultChecked,
-        isCustom: config.isCustom,
       })),
       recentTasks: recentTasks(),
+      broadcastSuffix: broadcastSuffix(),
     });
   });
 
   return (
     <div class="hub-app">
       <header class="hub-topbar">
-        <div>
+        <div class="hub-topbar-brand">
+          <button
+            class="hub-settings-button"
+            type="button"
+            title="设置"
+            aria-label="设置"
+            onClick={() => setShowSettings(true)}
+          >
+            ⚙
+          </button>
           <p class="hub-kicker">AI Terminal Hub</p>
         </div>
 
@@ -930,23 +942,24 @@ export default function HubApp() {
                       </label>
                     </div>
 
-                    <Show when={config.isCustom}>
+                    <div class="hub-agent-card-footer">
                       <button
-                        class="hub-danger-button"
+                        class="hub-agent-delete"
+                        type="button"
                         disabled={agentConfigLocked()}
-                        onClick={() => removeCustomAgent(config.id)}
+                        onClick={() => removeAgent(config.id)}
                       >
-                        删除自定义 AI
+                        删除
                       </button>
-                    </Show>
+                    </div>
                   </article>
                 )}
               </For>
             </div>
 
             <div class="hub-select-footer">
-              <button class="hub-secondary-button" disabled={agentConfigLocked()} onClick={addCustomAgent}>
-                添加自定义 AI
+              <button class="hub-secondary-button" disabled={agentConfigLocked()} onClick={addAgent}>
+                添加 AI
               </button>
               <div class="hub-select-summary">
                 <span>当前勾选 {selectedAgents().length} 个 AI</span>
@@ -1001,10 +1014,55 @@ export default function HubApp() {
             <TerminalWorkspace
               agents={terminalAgents()}
               autonomy={autonomy()}
+              broadcastSuffix={broadcastSuffix()}
               onReturnToAiConfig={() => setScreen('ai-select')}
             />
           </Show>
         )}
+      </Show>
+
+      <Show when={showSettings()}>
+        <div class="hub-modal-overlay" onClick={() => setShowSettings(false)}>
+          <div class="hub-modal" onClick={(event) => event.stopPropagation()}>
+            <div class="hub-modal-header">
+              <h3>设置</h3>
+              <button
+                class="hub-modal-close"
+                type="button"
+                aria-label="关闭设置"
+                onClick={() => setShowSettings(false)}
+              >
+                ✕
+              </button>
+            </div>
+
+            <label class="hub-field">
+              <span>广播发送提示词</span>
+              <textarea
+                class="hub-settings-textarea"
+                value={broadcastSuffix()}
+                onInput={(event) => setBroadcastSuffix(event.currentTarget.value)}
+                rows={4}
+              />
+            </label>
+            <p class="hub-muted">
+              点「广播发送」按钮时，会把这段文字接在你输入内容的末尾一起发送；直接按回车发送则不会附加。留空表示不附加。
+            </p>
+
+            <div class="hub-modal-actions">
+              <button
+                class="hub-secondary-button"
+                type="button"
+                onClick={() => setBroadcastSuffix(DEFAULT_BROADCAST_SUFFIX)}
+              >
+                恢复默认
+              </button>
+              <button class="hub-primary-button" type="button" onClick={() => setShowSettings(false)}>
+                完成
+              </button>
+            </div>
+          </div>
+        </div>
       </Show>
     </div>
   );

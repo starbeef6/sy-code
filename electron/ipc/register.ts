@@ -1,4 +1,5 @@
 import { BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron';
+import fs from 'fs';
 import { listAgents } from './agents.js';
 import { IPC } from './channels.js';
 import type {
@@ -13,6 +14,7 @@ import {
   prepareTaskFolder,
   resolveUserPath,
 } from '../task/task-folder.js';
+import { ensureAgentInstructions } from '../task/agent-instructions.js';
 import {
   deleteUploadedItem,
   findLatestNonLogFile,
@@ -235,6 +237,7 @@ export function registerAllHandlers(envReady: Promise<void> = Promise.resolve())
     // Terminal mode may open before any dispatch created the subfolder; node-pty
     // refuses to spawn into a non-existent cwd, so guarantee it exists.
     ensureDir(workDir);
+    ensureAgentInstructions(workDir, args.agentId);
     currentTaskFolder = path.dirname(workDir);
 
     const { command, args: cmdArgs } = buildInteractiveCommand({
@@ -297,6 +300,24 @@ export function registerAllHandlers(envReady: Promise<void> = Promise.resolve())
   function resolveBrainTaskFolder(value: unknown): string {
     return typeof value === 'string' && value.trim() ? resolveUserPath(value) : currentTaskFolder;
   }
+
+  // The pet window asks for this so it can launch its Codex brain INSIDE the
+  // active task folder (not the home dir, which made it scan ~ and hit privacy
+  // prompts) AND prime it with the concrete layout, so it never has to search.
+  // `agentDirs` are the immediate sub-folders (one per agent's work dir).
+  // Falls back to the default task root when no task is open yet.
+  ipcMain.handle(IPC.BrainTaskFolder, () => {
+    let agentDirs: string[] = [];
+    try {
+      agentDirs = fs
+        .readdirSync(currentTaskFolder, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== '00_input')
+        .map((entry) => entry.name);
+    } catch {
+      // Folder may not exist yet (no task opened); leave the list empty.
+    }
+    return { taskFolder: currentTaskFolder, agentDirs };
+  });
 
   ipcMain.handle(IPC.BrainGather, (_e, args) => {
     const taskFolder = resolveBrainTaskFolder(args?.taskFolder);

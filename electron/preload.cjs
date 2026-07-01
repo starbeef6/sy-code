@@ -30,6 +30,7 @@ const ALLOWED_CHANNELS = new Set([
   // Brain / pet coordinator
   'brain_gather',
   'brain_optimize',
+  'brain_task_folder',
   // Pet companion window
   'pet_set_size',
   'pet_pick_images',

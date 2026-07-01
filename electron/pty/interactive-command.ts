@@ -40,10 +40,17 @@ export function buildInteractiveCommand(input: InteractiveCommandInput): Interac
     }
 
     case 'gemini': {
+      // This slot now drives Antigravity (`agy`): Google retired the standalone
+      // Gemini CLI's personal login and pushed users to Antigravity. agy does
+      // NOT accept gemini's --approval-mode / --skip-trust (it errors out with
+      // "flags provided but not defined"). Its auto-approve flag is
+      // --dangerously-skip-permissions, and it has no separate "auto-edit"
+      // tier — only prompt (default) vs skip-all. Model flag is --model.
       const args: string[] = [];
-      if (autonomy === 'auto-edit') args.push('--approval-mode', 'auto_edit');
-      else if (autonomy === 'full-auto') args.push('--approval-mode', 'yolo');
-      if (model) args.push('-m', model);
+      if (autonomy === 'full-auto' || autonomy === 'auto-edit') {
+        args.push('--dangerously-skip-permissions');
+      }
+      if (model) args.push('--model', model);
       return { command, args };
     }
 
